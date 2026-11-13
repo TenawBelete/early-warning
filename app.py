@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import date, timedelta
 
 import pandas as pd
@@ -67,6 +68,11 @@ def ai_plan(key: str, question: str, today: date):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def ai_read_who(key: str, question: str, heads: tuple, as_of: date):
+    return ai.read_who(key, question, list(heads), as_of)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def ai_read(key: str, question: str, plan_json: str, heads: tuple, as_of: date):
     return ai.read(key, question, json.loads(plan_json), list(heads), as_of)
 
@@ -82,6 +88,11 @@ def run_question(question: str, adv: dict) -> dict | None:
         except ai.AIError as err:
             notes.append(f"The AI reader was not available ({err}). Keyword rules were used instead.")
     if plan is None:
+        if re.match(r"\s*(who|which|whom)\b", question, re.I):
+            st.error("Questions that start with 'who' or 'which' need the AI reader, which is not available right now"
+                     + (f" ({notes[0]})" if notes else ". Add a free Gemini key (see GUIDE.md)")
+                     + ". Or ask a yes/no question, for example 'Will Jane Doe become CEO of Acme in the next 60 days?'")
+            return None
         plan = live.auto_plan(question)
     if adv["focus"]:
         plan["focus"] = adv["focus"]
@@ -108,7 +119,17 @@ def run_question(question: str, adv: dict) -> dict | None:
         st.error(f"Could not fetch news right now. Wait a minute and try again. Details: {err}")
         return None
     reading = sent = None
-    if key and plan.get("by") == "ai" and heads:
+    if plan.get("kind") == "who":
+        if not heads:
+            st.error(f"No headlines came back for '{plan['focus']}'. Type a search phrase under Advanced (Who or what is it about).")
+            return None
+        try:
+            with st.spinner("Reading the headlines and listing the candidates..."):
+                reading, sent = ai_read_who(key, question, tuple(heads), as_of)
+        except ai.AIError as err:
+            st.error(f"The AI reader could not answer this 'who' question ({err}). Try again in a minute.")
+            return None
+    elif key and plan.get("by") == "ai" and heads:
         try:
             with st.spinner("Reading the headlines..."):
                 reading, sent = ai_read(key, question, json.dumps(plan, sort_keys=True), tuple(heads), as_of)
@@ -118,12 +139,73 @@ def run_question(question: str, adv: dict) -> dict | None:
                 reading=reading, sent=sent, notes=notes, yes=adv["yes"], no=adv["no"])
 
 
+def render_who(r: dict):
+    """Result page for 'who will...' questions: several candidates instead of yes or no."""
+    reading, as_of, sent = r["reading"], r["as_of"], r["sent"]
+    case = ai.build_who_case(r["question"], reading, sent)
+    probs, lo, hi, detail, _ = answer_with_range(case, "q", as_of)
+    order = sorted(probs, key=lambda h: -probs[h])
+    named = [h for h in order if h != ai.OTHER]
+    top = named[0]
+    st.divider()
+    st.subheader(r["question"])
+    st.caption(f"Searched news for: {r['plan']['focus']}. Using news published by {as_of:%d %B %Y}. "
+               f"News source: {', '.join(r['used'])}. Headlines read by an AI model ({ai.used.get('model', 'Gemini')}).")
+    if reading["decided"]:
+        st.error("The news suggests this has already been decided. " + reading["decided_note"])
+    else:
+        st.markdown(f"### The most likely answer is {top}, with a probability of {pct(probs[top])}.")
+        nxt = f" Next is {named[1]} at {pct(probs[named[1]])}." if len(named) > 1 else ""
+        st.markdown(f"Under nearby settings {top} ranges from {pct(lo[top])} to {pct(hi[top])}.{nxt} "
+                    f"The chance it is someone not on this list is {pct(probs[ai.OTHER])}.")
+    if reading["summary"]:
+        st.markdown(f"**What the news says.** {reading['summary']}")
+    pri = {c["name"]: c for c in reading["candidates"]}
+    st.dataframe(pd.DataFrame([{"Candidate": h, "Probability": pct(probs[h]), "Range": f"{pct(lo[h])} to {pct(hi[h])}",
+                                "Starting value": pct(pri[h]["prior"]), "Why this starting value": pri[h]["reason"]} for h in order]),
+                 hide_index=True, width="stretch")
+    st.caption("Experimental. The candidates and starting values are suggested by an AI model from the headlines and general "
+               "knowledge; the engine then adjusts them using the developments below. No track record.")
+    t_why, t_time, t_all, t_lim = st.tabs(["Why", "Over time", "All headlines", "Limits"])
+    with t_why:
+        if reading["developments"]:
+            st.dataframe(pd.DataFrame([{"Date": dv["date"], "Candidate": dv["candidate"], "Development": dv["summary"],
+                                        "Pushes their chance": "Up" if dv["direction"] == "up" else "Down", "Strength": dv["strength"],
+                                        "Source": sent[dv["ids"][0]].link} for dv in reading["developments"]]),
+                         hide_index=True, column_config=LINK, width="stretch")
+            for dv in reading["developments"]:
+                with st.expander(f"Headlines behind: {dv['candidate']}: {dv['summary']}"):
+                    for i in dv["ids"][:8]:
+                        st.markdown(f"- {sent[i].published}: [{sent[i].title}]({sent[i].link}) ({sent[i].source})")
+        else:
+            st.caption("No development in the last four weeks favours one candidate. The numbers are the starting values.")
+    with t_time:
+        days_ = [as_of - timedelta(days=i) for i in range(41, -1, -2)]
+        st.line_chart(pd.DataFrame([{"Date": d, **answer(case, "q", d)[0]} for d in days_]).set_index("Date"), y_label="Probability")
+        st.caption("Each point uses only developments published by that day. The candidate list itself is today's.")
+    with t_all:
+        st.dataframe(pd.DataFrame([{"Date": h.published, "Headline": h.title, "Outlet": h.source, "Source": h.link}
+                                   for h in sorted(r["heads"], key=lambda h: h.published, reverse=True)]),
+                     hide_index=True, column_config=LINK, width="stretch")
+    with t_lim:
+        st.markdown("""
+- **The candidate list comes from an AI model** reading headlines. A real candidate who is not in the news will be missing; that is what "Someone else" is for.
+- **Starting values are the model's judgment**, not measured rates. The final numbers depend heavily on them.
+- **Headlines only, public news only.** Boards decide in private.
+- **No track record.** Use this to see who the news points to and why, then judge for yourself.
+""")
+    log = {"question": r["question"], "as_of": str(as_of), "probabilities": {h: round(probs[h], 4) for h in order},
+           "reader": "ai", "engine": "0.6 live"}
+    st.download_button("Download this forecast (keep it to score later)", json.dumps(log, indent=2),
+                       file_name=f"forecast_{as_of}.json", mime="application/json")
+
+
 def ask_page():
     st.title("Ask anything")
     has_ai = bool(ai_key())
     st.caption("Type a question about a person, company or country and press Analyse. The app works out the rest, "
                "reads dated public news headlines, and estimates the chance. Experimental: see the Limits tab.")
-    question = st.text_input("Your question", placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?")
+    question = st.text_input("Your question", placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?   or   Who will be the next CEO of Acme?")
     with st.expander("Advanced (optional: everything here is filled in automatically)"):
         c1, c2 = st.columns(2)
         focus_in = c1.text_input("Who or what is it about", placeholder="automatic")
@@ -162,6 +244,9 @@ def ask_page():
         return
 
     plan, as_of, reading = r["plan"], r["as_of"], r["reading"]
+    if plan.get("kind") == "who":
+        render_who(r)
+        return
     focus, prior0 = plan["focus"], plan["prior"]
     tagged, kinds = live.tag_headlines(r["heads"], plan["template"], r["yes"], r["no"])
     k_p, k_lo, k_hi, k_detail, info = live.forecast(r["question"], focus, tagged, kinds, r["counts"], as_of, prior0)

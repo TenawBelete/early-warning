@@ -91,6 +91,40 @@ class App(unittest.TestCase):
                 self.assertNotIn(shown["Chance the event happens"], ("n/a", "2.0%"))
                 self.assertFalse(at.error)
 
+    def test_who_question(self):
+        import os
+        from datetime import date, timedelta
+        from unittest import mock
+        import streamlit as st
+        from ew import ai, live
+        st.cache_data.clear()
+        today = date.today()
+        heads = [live.Headline(f"Acme CEO story {i}", "Reuters", "https://example.org/a", today - timedelta(days=i), "focus") for i in range(10)]
+        plan = {"focus": "Acme CEO", "related": [], "event": "", "asks_opposite": False, "template": "custom", "horizon_days": 30,
+                "prior": None, "prior_reason": "", "by": "ai", "kind": "who"}
+        reading = ({"decided": False, "decided_note": "", "summary": "S.", "candidates": [
+            {"name": "Ann Lee", "prior": 0.4, "reason": "insider"}, {"name": "Bo Kim", "prior": 0.3, "reason": "r"},
+            {"name": ai.OTHER, "prior": 0.3, "reason": "x"}], "developments": [
+            {"candidate": "Ann Lee", "date": today, "summary": "Named interim", "direction": "up", "strength": "strong", "ids": [0]}]}, heads)
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k"}), \
+             mock.patch.object(live, "collect", return_value=(heads, [3] * 10, ["Google News"])), \
+             mock.patch.object(ai, "plan", return_value=plan), mock.patch.object(ai, "read_who", return_value=reading):
+            at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+            at.text_input[0].set_value("who will be the next acme ceo").run()
+            next(b for b in at.button if b.label == "Analyse").click().run()
+        self.assertFalse(at.exception)
+        self.assertFalse(at.error)
+        self.assertTrue(any("most likely answer is Ann Lee" in m.value for m in at.markdown))
+
+    def test_who_question_without_ai_explains(self):
+        import streamlit as st
+        st.cache_data.clear()
+        at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+        at.text_input[0].set_value("who will be the next acme ceo").run()
+        next(b for b in at.button if b.label == "Analyse").click().run()
+        self.assertFalse(at.exception)
+        self.assertTrue(any("need the AI reader" in e.value for e in at.error))
+
     def test_ai_failure_falls_back_to_keywords(self):
         import os
         from unittest import mock

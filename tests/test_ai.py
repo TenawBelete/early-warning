@@ -144,6 +144,33 @@ class Read(unittest.TestCase):
         self.assertFalse(reading["premise_ok"])
 
 
+class Who(unittest.TestCase):
+    def test_candidates_and_developments(self):
+        ai._model_cache.clear()
+        hs = [H("Acme names finance chief Ann Lee interim CEO", 1), H("Acme board hires search firm", 2), H("Bo Kim seen as contender", 3)]
+        reply = {"decided": False, "candidates": [{"name": "Ann Lee", "starting_percent": 25, "reason": "insider"},
+                                                  {"name": "Bo Kim", "starting_percent": 15, "reason": "r"},
+                                                  {"name": "Ann Lee", "starting_percent": 50}, {"name": ""}],
+                 "someone_else_percent": 2, "summary": "s", "developments": [
+                     {"candidate": "Ann Lee", "summary": "Named interim chief", "direction": "up", "strength": "strong", "headline_ids": [0]},
+                     {"candidate": "Nobody Listed", "summary": "x", "direction": "up", "strength": "strong", "headline_ids": [1]},
+                     {"candidate": "Bo Kim", "summary": "no headline", "direction": "up", "strength": "strong", "headline_ids": []}]}
+        reading, sent = ai.read_who("k", "Who will be the next CEO of Acme?", hs, AS_OF, http=fake(reply))
+        self.assertEqual([c["name"] for c in reading["candidates"]], ["Ann Lee", "Bo Kim", ai.OTHER])
+        self.assertAlmostEqual(sum(c["prior"] for c in reading["candidates"]), 1.0)
+        self.assertGreaterEqual(reading["candidates"][-1]["prior"], 0.1 / 1.5)   # "someone else" is never allowed to vanish
+        self.assertEqual(len(reading["developments"]), 1)
+        probs, lo, hi, _, _ = answer_with_range(ai.build_who_case("q", reading, sent), "q", AS_OF)
+        self.assertAlmostEqual(sum(probs.values()), 1.0)
+        self.assertGreater(probs["Ann Lee"], reading["candidates"][0]["prior"])
+        self.assertLess(probs["Ann Lee"], 0.85)
+
+    def test_no_candidates_is_an_error(self):
+        ai._model_cache.clear()
+        with self.assertRaises(ai.AIError):
+            ai.read_who("k", "q", [H("x", 1)], AS_OF, http=fake({"candidates": []}))
+
+
 class AutoPlan(unittest.TestCase):
     def test_lower_case_question(self):
         p = live.auto_plan("will tim cook step down as a ceo of apple within 30 days")

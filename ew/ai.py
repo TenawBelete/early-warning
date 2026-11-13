@@ -115,7 +115,8 @@ PLAN_PROMPT = """You set up a forecasting question for an early-warning tool. To
 Question: "{question}"
 
 Return JSON with exactly these keys:
-- "focus": the single person, company or country to search news for, as a news headline would write the name (proper capitalisation).
+- "kind": "who" if the question asks WHO or WHICH of several people or things will be chosen, win or be next (for example "who will be the next chief executive of Acme?"); otherwise "yes_no".
+- "focus": for a "yes_no" question, the single person, company or country to search news for, as a news headline would write the name (proper capitalisation). For a "who" question, the short phrase a headline about this contest would contain (for example "Acme CEO"), correctly spelled.
 - "related": up to 3 other names worth a lighter look (a rival, the organisation, a counterpart). May be empty.
 - "event": one short sentence stating the EVENT that would count as it happening, phrased as a change (for example "Jane Doe stops being chief executive of Acme"), never as things staying the same.
 - "asks_opposite": true if the question asks whether things will stay the same (so the answer to the question is 1 minus the chance of the event), else false.
@@ -141,7 +142,8 @@ def plan(key: str, question: str, today: date, http=_http) -> dict:
             "event": str(d.get("event", "")).strip()[:200] or question, "asks_opposite": bool(d.get("asks_opposite")),
             "template": tpl, "horizon_days": min(365, max(1, horizon)),
             "prior": min(0.5, max(0.001, rate / 100)) if rate > 0 else None,
-            "prior_reason": str(d.get("base_rate_reason", "")).strip()[:300], "by": "ai"}
+            "prior_reason": str(d.get("base_rate_reason", "")).strip()[:300], "by": "ai",
+            "kind": "who" if d.get("kind") == "who" else "yes_no"}
 
 
 # ------------------------------------------------------------------ read
@@ -235,3 +237,81 @@ def diagnose(key: str, http=_http) -> list[dict]:
     if working:
         _model_cache[key] = working + [n for n in names if n not in working]  # use the ones that work first
     return rows
+
+
+# ------------------------------------------------------------------ "who" questions
+OTHER = "Someone else"
+WHO_PROMPT = """You read news headlines for an early-warning tool. The cutoff date is {as_of}.
+Use the headlines below. Do not use anything you know about events after {as_of}.
+
+Question: "{question}"
+
+Headlines (id | date | outlet | headline), newest first:
+{lines}
+
+Return JSON with exactly these keys:
+- "decided": true if the headlines show the answer has already been settled by the cutoff (for example a permanent appointment was announced), else false.
+- "decided_note": if decided, one sentence saying who or what and when. Else "".
+- "candidates": up to 6 plausible answers, most likely first. Each: {{"name": full name, "starting_percent": the chance you would give before looking at the last 28 days of news, from role, experience and how such choices usually go, "reason": one short sentence}}.
+- "someone_else_percent": the starting chance that the answer is none of the candidates. Outsiders are chosen often; do not make this small.
+- "developments": at most {maxdev} DISTINCT developments from the 28 days before the cutoff that make one candidate more or less likely. Each:
+    {{"candidate": a name exactly as written in "candidates", "summary": your own words, at most 20 words,
+      "direction": "up" or "down", "strength": "weak", "medium" or "strong" (strong only for direct, factual, well-sourced developments),
+      "headline_ids": [ids]}}
+  Being named interim or acting holder is a development; speculation and opinion pieces are weak at most.
+- "summary": two or three plain sentences on where things stand. Do not give probabilities.
+"""
+
+
+def read_who(key: str, question: str, heads: list[Headline], as_of: date, http=_http) -> tuple[dict, list[Headline]]:
+    sent = select_headlines(heads, as_of)
+    assert all(h.published <= as_of for h in sent)  # the date gate
+    lines = "\n".join(f"{i} | {h.published} | {h.source} | {h.title}" for i, h in enumerate(sent)) or "(none)"
+    d = ask(key, WHO_PROMPT.format(as_of=as_of, question=question.replace('"', "'"), lines=lines, maxdev=10), http=http)
+    cands, seen = [], set()
+    for c in (d.get("candidates") or [])[:6]:
+        name = str(c.get("name", "")).strip()[:60] if isinstance(c, dict) else ""
+        if not name or name.lower() in seen or name == OTHER:
+            continue
+        seen.add(name.lower())
+        try:
+            pc = float(c.get("starting_percent") or 0)
+        except (TypeError, ValueError):
+            pc = 0.0
+        cands.append({"name": name, "weight": min(90.0, max(1.0, pc)), "reason": str(c.get("reason", "")).strip()[:200]})
+    if not cands:
+        raise AIError("The AI could not find any candidates in the news for this question.")
+    try:
+        other = float(d.get("someone_else_percent") or 0)
+    except (TypeError, ValueError):
+        other = 0.0
+    cands.append({"name": OTHER, "weight": min(90.0, max(10.0, other)), "reason": "Nobody on this list."})
+    total = sum(c["weight"] for c in cands)
+    for c in cands:
+        c["prior"] = c["weight"] / total
+    names = {c["name"] for c in cands}
+    devs = []
+    for x in (d.get("developments") or [])[:10]:
+        if not isinstance(x, dict) or x.get("candidate") not in names or x.get("direction") not in ("up", "down") or x.get("strength") not in STRENGTH:
+            continue
+        ids = [i for i in (x.get("headline_ids") or []) if isinstance(i, int) and 0 <= i < len(sent)]
+        if ids:
+            devs.append({"candidate": x["candidate"], "date": max(sent[i].published for i in ids),
+                         "summary": str(x.get("summary", "")).strip()[:200], "direction": x["direction"], "strength": x["strength"], "ids": ids})
+    return ({"decided": bool(d.get("decided")), "decided_note": str(d.get("decided_note", "")).strip()[:300],
+             "candidates": cands, "developments": devs, "summary": str(d.get("summary", "")).strip()[:700]}, sent)
+
+
+def build_who_case(question: str, reading: dict, sent: list[Headline]) -> Case:
+    types, ev = {}, []
+    for n, dv in enumerate(reading["developments"]):
+        lr = STRENGTH[dv["strength"]]
+        t = f"dev{n}"
+        types[t] = {"family": f"{dv['direction']}:{dv['candidate']}", "lr": {dv["candidate"]: lr if dv["direction"] == "up" else 1 / lr}}
+        hs = [sent[i] for i in dv["ids"]]
+        ev.append(Evidence(f"d{n}", dv["date"], dv["date"], "focus", t, dv["summary"], hs[0].link,
+                           max(reliability(h.source) for h in hs), dv["candidate"]))
+    half = {**HALF_LIFE, **{t["family"]: 30 for t in types.values()}}
+    spec = {"name": question, "focus_entity": "focus",
+            "questions": [{"id": "q", "text": question, "kind": "live", "priors": {c["name"]: c["prior"] for c in reading["candidates"]}}]}
+    return Case("live_who", spec, {"types": types, "half_life_days": half, "watch_families": []}, ev, {"focus": (1.0, 0)})
