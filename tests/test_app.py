@@ -28,9 +28,9 @@ class App(unittest.TestCase):
         from unittest import mock
         from ew import live
         today = date.today()
-        heads = [live.Headline("Jane Doe under investigation by regulators", "Reuters", "https://example.org/1", today - timedelta(days=2), "focus"),
-                 live.Headline("Board backs Jane Doe", "Local Paper", "https://example.org/2", today - timedelta(days=5), "focus"),
-                 live.Headline("Acme opens office", "Local Paper", "https://example.org/3", today - timedelta(days=9), "Acme")]
+        heads = [live.Headline(f"Jane Doe opens office {i}", "Local Paper", "https://example.org/a", today - timedelta(days=15 + i), "focus") for i in range(40)]
+        heads += [live.Headline(f"Jane Doe visits plant {i}", "Local Paper", "https://example.org/b", today - timedelta(days=i % 10), "focus") for i in range(10)]
+        heads += [live.Headline(f"Jane Doe under investigation by regulators {i}", "Reuters", "https://example.org/c", today - timedelta(days=i % 5), "focus") for i in range(8)]
         with mock.patch.object(live, "collect", return_value=(heads, [3, 4, 2, 3, 5, 3, 4, 3, 2, 4], ["Google News"])):
             at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
             at.text_input[0].set_value("Will Jane Doe resign as CEO of Acme?").run()
@@ -39,8 +39,8 @@ class App(unittest.TestCase):
         self.assertFalse(at.exception)
         self.assertFalse(at.error)
         shown = {m.label: m.value for m in at.metric}
-        self.assertEqual(shown["Headlines read"], "3")
-        self.assertEqual(shown["Headlines that counted"], "2")
+        self.assertEqual(shown["Headlines read"], "58")
+        self.assertEqual(shown["Unusual signals"], "1")
         self.assertNotEqual(shown["Probability of yes"], shown["Starting value"])
 
     def test_ask_anything_reports_fetch_failure(self):

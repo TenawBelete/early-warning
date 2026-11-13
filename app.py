@@ -103,40 +103,52 @@ def ask_page():
     if not r:
         return
 
-    case, info = live.build_case(r["question"], r["focus"], r["heads"], r["counts"], r["as_of"], r["template"],
-                                 r["prior"], r["yes"], r["no"])
-    probs, lo, hi, detail, _ = answer_with_range(case, "q", r["as_of"])
+    tagged, kinds = live.tag_headlines(r["heads"], r["template"], r["yes"], r["no"])
+    p_yes, lo_yes, hi_yes, detail_yes, info = live.forecast(r["question"], r["focus"], tagged, kinds, r["counts"],
+                                                            r["as_of"], r["prior"])
+    probs, lo, hi = {"yes": p_yes}, {"yes": lo_yes}, {"yes": hi_yes}
     st.divider()
     st.subheader(r["question"])
     st.caption(f"Focus: {r['focus']}. Window: {r['horizon']} days from {r['as_of']:%d %B %Y}. "
                f"News source: {', '.join(r['used'])}.")
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Probability of yes", pct(probs["yes"]))
-    m1.caption(f"Range {pct(lo['yes'])} to {pct(hi['yes'])}")
+    m1.metric("Probability of yes", pct(p_yes))
+    m1.caption(f"Range {pct(lo_yes)} to {pct(hi_yes)}")
     m2.metric("Starting value", pct(r["prior"]))
     m3.metric("Headlines read", info["read"])
-    m4.metric("Headlines that counted", info["used"])
-    net = sum(c for _, c in detail["yes"])
+    m4.metric("Unusual signals", info["signals"])
     if info["read"] == 0:
         st.warning("No headlines came back. Check the spelling of the focus, or try a shorter name.")
-    elif abs(net) < WEAK:
-        st.info("Very little in the news bears on this question. The number is essentially the starting value.")
-    st.caption("This is a keyword reading of headlines, not a validated forecast. It has no track record.")
+    elif info["signals"] == 0:
+        st.info("Nothing in the last two weeks stands out from this name's usual coverage. "
+                "The number is the starting value.")
+    if info["maybe_happened"]:
+        st.warning("Several recent headlines report this event directly. It may already have happened: check the headlines.")
+    st.caption("A kind of story counts only when it is clearly more common in the last two weeks than in this name's "
+               "own earlier coverage. This is a keyword reading of headlines with no track record, not a validated forecast.")
 
     t_why, t_cov, t_time, t_all, t_lim = st.tabs(["Why", "Coverage", "Over time", "All headlines", "Limits"])
     with t_why:
-        a, b = st.columns(2)
-        up = [(e, c) for e, c in detail["yes"] if c > 0][:12]
-        down = [(e, c) for e, c in detail["yes"] if c < 0][:12]
-        for col, title, pairs in ((a, "Pushing it up", up), (b, "Pushing it down", down)):
-            col.markdown(title)
-            if pairs:
-                col.dataframe(pd.DataFrame([{"Date": e.public_date, "Headline": e.summary, "Read as": e.type.replace("_", " "),
-                                             "Effect": round(c, 2), "Outlet": e.note, "Source": e.source} for e, c in pairs]),
-                              hide_index=True, column_config=LINK, width="stretch")
-            else:
-                col.caption("Nothing found.")
-        st.caption("Check the 'Read as' column. If a headline was misread, the number is wrong by that much.")
+        effect = {e.id: c for e, c in detail_yes}
+        rows = [x for x in info["rows"] if x["recent"] > 0]
+        if rows:
+            st.dataframe(pd.DataFrame([{
+                "Kind of story": live.LABELS.get(x["signal"], x["signal"]),
+                "About": r["focus"] if x["group"] == "focus" else "related names",
+                "Last 14 days": f"{x['recent']} of {x['recent_total']} ({x['recent'] / x['recent_total']:.0%})",
+                "Usual share": "unknown" if x["usual_share"] is None else f"{x['usual_share']:.0%}",
+                "Counted": "Yes" if x["counted"] else "No, within normal",
+                "Effect": round(effect.get(f"{x['signal']}@{x['group']}", 0.0), 2)}
+                for x in sorted(rows, key=lambda x: (-x["counted"], -x["recent"]))]), hide_index=True, width="stretch")
+            st.caption("Effect above 0 pushes the probability up, below 0 pushes it down.")
+            for x in rows:
+                if x["counted"]:
+                    with st.expander(f"Example headlines: {live.LABELS.get(x['signal'], x['signal'])}"):
+                        for h in x["examples"]:
+                            st.markdown(f"- {h.published}: [{h.title}]({h.link}) ({h.source})")
+            st.caption("Read the examples. If the headlines were misread, ignore that signal.")
+        else:
+            st.caption("No headline in the last two weeks matched any clue for this type of event.")
     with t_cov:
         ends = [r["as_of"] - timedelta(days=7 * w) for w in range(len(r["counts"]) - 1, -1, -1)]
         st.bar_chart(pd.DataFrame({"Week ending": ends, "Headlines": r["counts"]}).set_index("Week ending"))
@@ -148,8 +160,8 @@ def ask_page():
             st.caption(f"Latest week against this name's own normal: z = {info['attention_z']:.1f} "
                        "(about 0 is normal, 3 or more is unusual and counts as a weak signal).")
     with t_time:
-        days = [r["as_of"] - timedelta(days=i) for i in range(min(60, 7 * r["weeks"]) - 1, -1, -1)]
-        st.line_chart(pd.DataFrame({"Date": days, "Probability of yes": [answer(case, "q", d)[0]["yes"] for d in days]}).set_index("Date"),
+        days = [r["as_of"] - timedelta(days=i) for i in range(min(42, 7 * r["weeks"] - 21) - 1, -1, -2)]
+        st.line_chart(pd.DataFrame({"Date": days, "Probability of yes": [live.forecast(r["question"], r["focus"], tagged, kinds, [], d, r["prior"])[0] for d in days]}).set_index("Date"),
                       y_label="Probability")
         st.caption("Each point uses only headlines published by that day.")
     with t_all:
@@ -159,6 +171,7 @@ def ask_page():
                      hide_index=True, column_config=LINK, width="stretch")
     with t_lim:
         st.markdown("""
+- **Compared with its own past.** A kind of story counts only if it is clearly more common in the last 14 days than in the earlier weeks for the same name. A name that is always in trouble will not trigger it; a slow build-up over months will be missed.
 - **Keywords, not understanding.** A headline is tagged by the words in it. Sarcasm, questions and stories about someone else with the same name are misread.
 - **Headlines only.** The article text is not read.
 - **The starting value is a judgment.** The final number depends heavily on it.
@@ -171,7 +184,7 @@ def ask_page():
     log = {"question": r["question"], "focus": r["focus"], "as_of": str(r["as_of"]), "horizon_days": r["horizon"],
            "event_type": r["template"], "starting_value": r["prior"], "probability": round(probs["yes"], 4),
            "low": round(lo["yes"], 4), "high": round(hi["yes"], 4), "headlines_read": info["read"],
-           "headlines_counted": info["used"], "engine": "0.3 live"}
+           "unusual_signals": info["signals"], "engine": "0.4 live"}
     st.download_button("Download this forecast (keep it to score later)", json.dumps(log, indent=2),
                        file_name=f"forecast_{r['as_of']}.json", mime="application/json")
 

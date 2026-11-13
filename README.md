@@ -39,7 +39,9 @@ The engine itself needs only Python 3.10+. Streamlit and pandas are for the web 
 Type any question about a person, company or country. The app fetches dated public headlines
 (Google News, with GDELT as a fallback), tags each one by keyword rules (`ew/live.py`), and runs
 them through the same engine. The focus is read week by week; related names are read once and
-count half as much. Headlines dated after the chosen cutoff are never used.
+count half as much. Headlines dated after the chosen cutoff are never used. A kind of story
+counts only when it is clearly more common in the last 14 days than in the same name's earlier
+coverage; the first version counted every matching headline and pushed famous names to ~100%.
 
 This mode is experimental. Keyword rules misread headlines, the starting value is a judgment,
 and nothing in it has been scored against outcomes. The live fetch could not be tested from the

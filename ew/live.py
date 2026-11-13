@@ -6,7 +6,13 @@ asked:
 
   1. fetch dated headlines about the focus (and, less deeply, related names)
   2. tag each headline with a signal type by keyword rules
-  3. hand the result to the same engine as the bundled cases
+  3. compare the last two weeks with the same name's own earlier coverage:
+     only a kind of story that is clearly MORE common than usual counts
+  4. hand the result to the same engine as the bundled cases
+
+Step 3 matters. A famous name always has lawsuits, critics and warnings in
+its headlines. Counting each such headline as evidence (the first version of
+this module did) drives every answer towards 100%.
 
 Limits, stated plainly: keyword rules misread headlines, a headline is not
 the article, the starting value is a rough judgment, and none of this has a
@@ -41,7 +47,7 @@ TEMPLATES: dict[str, dict] = {
         "detect": r"resign|step(s|ping)? down|fired|oust|replac|quit|removed|leave (office|the company)|successor|still be (ceo|president|prime minister|chair)",
         "base": (0.01, 30),
         "signals": [
-            ("exit_reported", "direct", 4.0, r"\b(resigns|resigned|steps down|stepping down|to step down|stepped down|ousted|fired|sacked|removed as|leave of absence|placed on leave|goes on leave)\b"),
+            ("exit_reported", "direct", 4.0, r"\b(resigns|resigned|steps down|stepping down|to step down|stepped down|ousted|(is|was|been|gets|got) (fired|sacked)|removed as|leave of absence|placed on leave|goes on leave)\b"),
             ("succession_talk", "succession", 1.6, r"\b(successor|succession|interim (ceo|chief|leader|president)|search for (a )?new|replacement for)\b"),
             ("official_probe", "official", 2.0, r"\b(investigat\w*|probe|probes|subpoena\w*|indict\w*|charged|raid|raided|inquiry|whistleblower|grand jury|search warrant)\b"),
             ("scandal", "scandal", 1.8, r"\b(scandal|affair|misconduct|allegation\w*|alleged|accused|harass\w*|cover-?up|leaked|fraud)\b"),
@@ -272,39 +278,100 @@ def signals_for(template: str, yes_words: list[str], no_words: list[str]):
     return sig
 
 
-def build_case(question: str, focus: str, heads: list[Headline], counts: list[int], as_of: date, template: str,
-               prior_yes: float, yes_words: list[str] | None = None, no_words: list[str] | None = None) -> tuple[Case, dict]:
-    """Turn headlines into a Case the normal engine can answer. Also returns diagnostics."""
-    sig = signals_for(template, yes_words or [], no_words or [])
-    types = {n: {"family": f, "lr": {"yes": lr}} for n, f, lr, _ in sig}
-    types["denied_claim"] = {"family": "response", "lr": {"yes": 1.1}}
-    types["attention_spike"] = {"family": "attention", "lr": {"yes": 1.3}}
-    catalog = {"types": types, "half_life_days": HALF_LIFE, "watch_families": []}
-    relevance = {"named_in_headline": (1.0, 0), "found_by_focus_search": (0.6, 1), "related_name": (0.5, 1)}
+import math
 
-    names = [focus.lower()] + [w for w in focus.lower().split() if len(w) > 3][-1:]
-    ev: list[Evidence] = []
-    for i, h in enumerate(heads):
+from .cases import answer, neighbours
+from .engine import V0
+
+RECENT_DAYS = 14
+LABELS = {"exit_reported": "Reports that the exit is happening", "succession_talk": "Talk of a successor",
+          "official_probe": "Investigations", "scandal": "Scandal or allegations", "pressure": "Pressure to go",
+          "trouble": "Business or legal trouble", "support": "Shows of support", "strike_reported": "Reports of a strike",
+          "precaution": "Evacuations and travel warnings", "force_movement": "Military movements",
+          "talks_fail": "Talks failing", "talks_progress": "Talks progressing", "threat": "Threats and warnings",
+          "deal_reported": "Reports that the deal is done", "breakdown": "Setbacks", "approval": "Approvals",
+          "progress": "Progress in talks", "cleared": "Cleared or dropped", "action_reported": "Reports of legal action",
+          "probe": "Investigations", "cooperation": "Witness cooperation", "allegation": "Allegations",
+          "your_yes_clue": "Your YES clue words", "your_no_clue": "Your NO clue words",
+          "attention_spike": "Unusual amount of coverage"}
+
+
+def tag_headlines(heads: list[Headline], template: str, yes_words=None, no_words=None):
+    """Return [(headline, signal type or None)]. A denial is tagged 'denied_claim' and never counted."""
+    sig = signals_for(template, yes_words or [], no_words or [])
+    out = []
+    for h in heads:
         kind = next((n for n, _, _, rx in sig if rx.search(h.title)), None)
-        if kind is None:
-            continue
-        if DENIAL.search(h.title) and types[kind]["lr"]["yes"] > 1:
-            kind = "denied_claim"  # a denial shows the issue is live, but is weak evidence
-        low = h.title.lower()
-        entity = "named_in_headline" if any(n in low for n in names) else ("found_by_focus_search" if h.query == "focus" else "related_name")
-        ev.append(Evidence(f"h{i:04d}", h.published, h.published, entity, kind, h.title, h.link, reliability(h.source), h.source))
+        if kind and DENIAL.search(h.title):
+            kind = "denied_claim"
+        out.append((h, kind))
+    return out, {n: (f, lr) for n, f, lr, _ in sig}
+
+
+def build_case(question: str, focus: str, tagged, kinds: dict, counts: list[int], as_of: date, prior_yes: float,
+               recent_days: int = RECENT_DAYS) -> tuple[Case, dict]:
+    """Compare recent coverage with the name's own baseline and turn the differences into a Case."""
+    cut = as_of - timedelta(days=recent_days)
+    types: dict = {"attention_spike": {"family": "attention", "lr": {"yes": 1.3}}}
+    ev: list[Evidence] = []
+    rows: list[dict] = []
+    for group, rel_name in (("focus", "focus"), ("related", "related_name")):
+        mine = [(h, k) for h, k in tagged if (h.query == "focus") == (group == "focus") and h.published <= as_of]
+        recent = [(h, k) for h, k in mine if h.published > cut]
+        base = [(h, k) for h, k in mine if h.published <= cut]
+        n_r, n_b = len(recent), len(base)
+        if n_r < 5:
+            continue  # too little recent coverage to say anything
+        for kind, (family, lr) in kinds.items():
+            ex = [h for h, k in recent if k == kind]
+            k_r, k_b = len(ex), sum(k == kind for _, k in base)
+            usual = (k_b + 1) / (n_b + 2)
+            expected = n_r * usual
+            lift = ((k_r + 1) / (n_r + 2)) / usual
+            row = {"signal": kind, "group": group, "recent": k_r, "recent_total": n_r, "usual_share": k_b / n_b if n_b else None,
+                   "lift": lift, "counted": False, "examples": ex[:6]}
+            rows.append(row)
+            # must be at least 3 headlines, 1.5x the usual share, and clearly outside ordinary week-to-week noise
+            if k_r < 3 or lift < 1.5 or k_r < expected + 2 * math.sqrt(expected):
+                continue
+            strength = min(1.0, math.log(lift) / math.log(3))  # three times the usual share = full strength
+            if n_b < 20:
+                strength *= 0.5  # no real baseline to compare with
+            name = f"{kind}@{group}"
+            types[name] = {"family": family, "lr": {"yes": lr ** strength}}
+            usual_txt = f"usual {k_b / n_b:.0%}" if n_b >= 20 else "too little earlier coverage to know what is usual"
+            ev.append(Evidence(name, as_of, as_of, rel_name, name,
+                               f"{LABELS.get(kind, kind)}: {k_r} of the last {n_r} headlines ({k_r / n_r:.0%}); {usual_txt}",
+                               ex[0].link, max(reliability(h.source) for h in ex), group))
+            row["counted"] = True
 
     z = None
-    saturated = sum(c >= PER_QUERY_CAP - 5 for c in counts) > len(counts) / 2
+    saturated = bool(counts) and sum(c >= PER_QUERY_CAP - 5 for c in counts) > len(counts) / 2
     if len(counts) >= 9 and not saturated:
         z = robust_z([float(c) for c in counts[:-1]], float(counts[-1]))
         if z >= 3:
             med = sorted(counts[:-1])[len(counts[:-1]) // 2]
-            ev.append(Evidence("attn", as_of, as_of, "named_in_headline", "attention_spike",
-                               f"Unusual coverage: {counts[-1]} headlines this week against a typical {med}",
-                               google_news_url(focus, as_of - timedelta(days=6), as_of), 0.8, "headline counts"))
+            ev.append(Evidence("attn", as_of, as_of, "focus", "attention_spike",
+                               f"Unusual amount of coverage: {counts[-1]} headlines this week against a typical {med}",
+                               google_news_url(focus, as_of - timedelta(days=6), as_of), 0.8, "focus"))
 
+    direct = [r for r in rows if r["group"] == "focus" and kinds[r["signal"]][0] == "direct"]
+    catalog = {"types": types, "half_life_days": HALF_LIFE, "watch_families": []}
     spec = {"name": question, "focus_entity": focus,
             "questions": [{"id": "q", "text": question, "kind": "live", "priors": {"yes": prior_yes, "no": 1 - prior_yes}}]}
-    info = {"read": len(heads), "used": len(ev), "attention_z": z, "saturated": saturated, "weekly_counts": counts}
-    return Case("live", spec, catalog, ev, relevance), info
+    info = {"read": sum(h.published <= as_of for h, _ in tagged), "signals": len(ev), "attention_z": z, "saturated": saturated,
+            "weekly_counts": counts, "rows": rows, "maybe_happened": any(r["counted"] and r["recent"] >= 5 for r in direct)}
+    return Case("live", spec, catalog, ev, {"focus": (1.0, 0), "related_name": (0.5, 1)}), info
+
+
+def forecast(question, focus, tagged, kinds, counts, as_of, prior_yes):
+    """Central number, plus the lowest and highest across nearby engine settings and 7/14/28-day 'recent' windows."""
+    case, info = build_case(question, focus, tagged, kinds, counts, as_of, prior_yes)
+    probs, detail, _ = answer(case, "q", as_of)
+    lo = hi = probs["yes"]
+    for days in (7, 14, 28):
+        c, _ = build_case(question, focus, tagged, kinds, counts, as_of, prior_yes, days)
+        for st in neighbours(V0):
+            v = answer(c, "q", as_of, st)[0]["yes"]
+            lo, hi = min(lo, v), max(hi, v)
+    return probs["yes"], lo, hi, detail["yes"], info

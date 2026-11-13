@@ -75,54 +75,89 @@ class Gate(unittest.TestCase):
         self.assertEqual(len(heads), 1)
 
 
-class Engine(unittest.TestCase):
-    def run_case(self, titles, template="leader_exit", counts=None, **kw):
-        heads = [live.Headline(t, s, "https://example.org", AS_OF - timedelta(days=a), q) for t, s, a, q in titles]
-        case, info = live.build_case("Will Jane Doe resign?", "Jane Doe", heads, counts or [5] * 10, AS_OF, template, 0.01, **kw)
-        probs, lo, hi, detail, n = answer_with_range(case, "q", AS_OF)
-        return probs["yes"], lo["yes"], hi["yes"], case, info
+def H(title, days_ago, source="Reuters", query="focus"):
+    return live.Headline(title, source, "https://example.org", AS_OF - timedelta(days=days_ago), query)
 
-    def test_no_matching_news_returns_starting_value(self):
-        p, *_ = self.run_case([("Jane Doe opens new office", "Reuters", 1, "focus")])
+
+ORDINARY = ["Big Boss unveils new product", "Big Boss lawsuit over pay continues", "Regulators investigate Big Boss firm",
+            "Big Boss warns of slowdown", "Shares fall after Big Boss comments", "Big Boss accused by critics",
+            "Big Boss fired back at critics", "Who is the successor to Big Boss?", "Big Boss under fire for post",
+            "Big Boss visits factory"]
+
+
+def ordinary(n=700, seed=0):
+    import random
+    rng = random.Random(seed)
+    return [H(f"{rng.choice(ORDINARY)} {i}", rng.randrange(70)) for i in range(n)]
+
+
+class Engine(unittest.TestCase):
+    def run_case(self, heads, template="leader_exit", counts=None, prior=0.01, **kw):
+        tagged, kinds = live.tag_headlines(heads, template, kw.get("yes_words"), kw.get("no_words"))
+        p, lo, hi, detail, info = live.forecast("Will Big Boss resign?", "Big Boss", tagged, kinds,
+                                                [5] * 10 if counts is None else counts, AS_OF, prior)
+        return p, lo, hi, info
+
+    def test_no_news_returns_starting_value(self):
+        p, *_ = self.run_case([H(f"Big Boss opens office {i}", i) for i in range(40)])
         self.assertAlmostEqual(p, 0.01)
 
-    def test_pressure_raises_and_support_lowers(self):
-        up, *_ = self.run_case([("Jane Doe under investigation by regulators", "Reuters", 1, "focus"),
-                                ("Board hires firm to find successor to Jane Doe", "Bloomberg", 2, "focus")])
-        down, *_ = self.run_case([("Board backs Jane Doe after record profit", "Reuters", 1, "focus")])
-        self.assertGreater(up, 0.01)
-        self.assertLess(down, 0.01)
+    def test_famous_name_with_ordinary_trouble_stays_at_starting_value(self):
+        # the failure of the first version: steady background noise must not count as evidence
+        for seed in range(25):
+            p, *_ = self.run_case(ordinary(seed=seed))
+            self.assertLess(p, 0.015, seed)
 
-    def test_repeats_of_one_story_are_bounded(self):
-        one, *_ = self.run_case([("Jane Doe faces probe", "Reuters", 1, "focus")])
-        many, *_ = self.run_case([(f"Jane Doe faces probe, report {i}", "Reuters", 1, "focus") for i in range(60)])
-        self.assertGreater(many, one)
-        self.assertLess(many, 0.10)  # sixty copies of one kind of story cannot run away
-
-    def test_denial_is_weak_and_related_counts_less(self):
-        claim, *_ = self.run_case([("Jane Doe to step down", "Reuters", 1, "focus")])
-        denial, *_ = self.run_case([("Jane Doe denies she will step down", "Reuters", 1, "focus")])
-        related, *_ = self.run_case([("Rival chief to step down", "Reuters", 1, "Rival Corp")])
-        self.assertLess(denial, claim)
-        self.assertLess(related, claim)
-
-    def test_low_and_high_bracket_the_number(self):
-        p, lo, hi, *_ = self.run_case([("Jane Doe under investigation", "Reuters", 3, "focus")])
+    def test_a_real_change_moves_the_number_but_not_to_certainty(self):
+        surge = [H(f"Big Boss subpoenaed in fraud inquiry {i}", i % 6) for i in range(60)]
+        p, lo, hi, info = self.run_case(ordinary() + surge)
+        self.assertGreater(p, 0.015)
+        self.assertLess(hi, 0.5)
         self.assertLessEqual(lo, p)
         self.assertLessEqual(p, hi)
 
+    def test_support_lowers(self):
+        calm = [H(f"Big Boss opens office {i}", 15 + i % 50) for i in range(100)] + [H(f"Big Boss tours site {i}", i % 10) for i in range(10)]
+        p, *_ = self.run_case(calm + [H(f"Board backs Big Boss after record profit {i}", i % 5) for i in range(6)])
+        self.assertLess(p, 0.01)
+
+    def test_denials_and_two_stray_headlines_do_not_count(self):
+        calm = [H(f"Big Boss opens office {i}", i % 60) for i in range(100)]
+        p, *_ = self.run_case(calm + [H(f"Big Boss denies she will step down {i}", i) for i in range(6)])
+        q, *_ = self.run_case(calm + [H("Big Boss to step down", 1), H("Big Boss stepping down, sources say", 2)])
+        self.assertAlmostEqual(p, 0.01)
+        self.assertAlmostEqual(q, 0.01)
+
+    def test_related_names_count_less(self):
+        calm = [H(f"Big Boss opens office {i}", i % 60) for i in range(100)]
+        own = [H(f"Big Boss under investigation {i}", i % 5) for i in range(10)]
+        other = [H(f"Rival chief under investigation {i}", i % 5, query="Rival") for i in range(10)]
+        a, *_ = self.run_case(calm + own)
+        b, *_ = self.run_case(calm + other)
+        self.assertGreater(a, b)
+        self.assertGreater(b, 0.01)
+
+    def test_direct_reports_raise_the_already_happened_flag(self):
+        calm = [H(f"Big Boss opens office {i}", i % 60) for i in range(100)]
+        *_, info = self.run_case(calm + [H(f"Big Boss resigns as chief {i}", i % 3) for i in range(8)])
+        self.assertTrue(info["maybe_happened"])
+
+    def test_gate_inside_scoring(self):
+        future = [live.Headline(f"Big Boss resigns {i}", "Reuters", "u", AS_OF + timedelta(days=1), "focus") for i in range(20)]
+        p, *_ = self.run_case([H(f"Big Boss opens office {i}", i % 60) for i in range(100)] + future)
+        self.assertAlmostEqual(p, 0.01)
+
     def test_attention_spike_and_saturation(self):
-        *_, case, info = self.run_case([], counts=[5, 6, 4, 5, 7, 5, 6, 5, 4, 40])
-        self.assertIn("attention_spike", [e.type for e in case.evidence])
-        *_, case, info = self.run_case([], counts=[100] * 10)
+        *_, info = self.run_case([], counts=[5, 6, 4, 5, 7, 5, 6, 5, 4, 40])
+        self.assertEqual(info["signals"], 1)
+        *_, info = self.run_case([], counts=[100] * 10)
         self.assertTrue(info["saturated"])
-        self.assertEqual(case.evidence, [])
+        self.assertEqual(info["signals"], 0)
 
     def test_custom_clue_words(self):
-        p, *_ = self.run_case([("Jane Doe volcano erupts again", "Reuters", 1, "focus")], template="custom", yes_words=["erupt"])
-        q, *_ = self.run_case([("Jane Doe volcano calm", "Reuters", 1, "focus")], template="custom", yes_words=["erupt"], no_words=["calm"])
+        calm = [H(f"Big Boss volcano quiet {i}", 15 + i % 50) for i in range(60)] + [H(f"Big Boss volcano watch {i}", i % 10) for i in range(6)]
+        p, *_ = self.run_case(calm + [H(f"Big Boss volcano erupts {i}", i % 4) for i in range(6)], template="custom", yes_words=["erupt"])
         self.assertGreater(p, 0.01)
-        self.assertLess(q, 0.01)
 
 
 if __name__ == "__main__":
