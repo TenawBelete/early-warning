@@ -36,7 +36,7 @@ def H(title, days_ago, source="Reuters"):
 
 class Model(unittest.TestCase):
     def test_picks_newest_and_skips_special_variants(self):
-        self.assertEqual(ai.rank_models(MODELS["models"]), ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.9-flash-lite"])
+        self.assertEqual(ai.rank_models(MODELS["models"]), ["gemini-3.8-flash", "gemini-3.9-flash-lite", "gemini-3.6-flash"])
 
     def test_falls_back_when_first_model_is_refused(self):
         ai._model_cache.clear()
@@ -48,7 +48,20 @@ class Model(unittest.TestCase):
                 raise ai.AIError("AI service error 429: not on free tier")
             return {"candidates": [{"content": {"parts": [{"text": "{\"ok\": 1}"}]}}]}
         self.assertEqual(ai.ask("k", "p", http=http), {"ok": 1})
-        self.assertEqual(ai._model_cache["k"][0], "gemini-3.6-flash")
+        self.assertEqual(ai._model_cache["k"][0], "gemini-3.9-flash-lite")
+
+    def test_diagnose_reports_each_model(self):
+        ai._model_cache.clear()
+
+        def http(url, key, body=None, timeout=60):
+            if body is None:
+                return MODELS
+            if "3.8-flash" in url:
+                raise ai.AIError("Could not reach the AI service: timed out")
+            return {"candidates": [{"content": {"parts": [{"text": "{\"ok\": true}"}]}}]}
+        rows = ai.diagnose("k", http=http)
+        self.assertEqual([r["Result"] == "works" for r in rows], [False, True, True])
+        self.assertEqual(ai._model_cache["k"][0], "gemini-3.9-flash-lite")
 
     def test_prefers_full_flash_at_same_version(self):
         ms = [{"name": "models/gemini-3.8-flash-lite", "supportedGenerationMethods": ["generateContent"]},

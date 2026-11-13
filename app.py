@@ -140,6 +140,10 @@ def ask_page():
         yes_w = st.text_input("Extra clue words pointing to YES (keyword mode only)")
         no_w = st.text_input("Extra clue words pointing to NO (keyword mode only)")
         weeks = st.select_slider("How far back to read", [9, 10, 13, 26], value=10, format_func=lambda w: f"{w} weeks")
+        if has_ai and st.button("Test the AI connection"):
+            with st.spinner("Testing..."):
+                st.dataframe(pd.DataFrame(ai.diagnose(ai_key())), hide_index=True, width="stretch")
+            st.cache_data.clear()
     if not has_ai:
         st.caption("Running in keyword mode. Add a free Gemini key (see GUIDE.md) and the app will read headlines with an AI model.")
 
@@ -174,16 +178,24 @@ def ask_page():
         st.warning(note)
     st.caption(f"Focus: {focus}" + (f" (also checked: {', '.join(plan['related'])})" if plan["related"] else "")
                + f". Window: {plan['horizon_days']} days from {as_of:%d %B %Y}. News source: {', '.join(r['used'])}. "
-               + ("Headlines read by an AI model." if reading else "Headlines read by keyword rules."))
+               + (f"Headlines read by an AI model ({ai.used.get('model', 'Gemini')})." if reading else "Headlines read by keyword rules."))
     stale = bool(reading) and (not reading["premise_ok"] or reading["already_happened"])
     if reading and not reading["premise_ok"]:
         st.error("This question looks out of date. " + (reading["premise_note"] or "The news suggests its premise no longer holds.")
                  + " The number below is not meaningful.")
     elif (reading and reading["already_happened"]) or (not reading and info["maybe_happened"]):
         st.error("The news suggests this event has already happened. Check the headlines; the number below is not meaningful.")
+    ev_txt = plan["event"].rstrip(".")
+    if not stale:
+        st.markdown(f"### There is a {pct(p_yes)} probability of this event in the next {plan['horizon_days']} days: {ev_txt}.")
+        if n_sig == 0:
+            why = "Nothing in the recent news changes the picture, so this is the starting value."
+        else:
+            move = "raised" if p_yes > prior0 else "lowered"
+            why = f"The news {move} it from a starting value of {pct(prior0)}. Under nearby settings it ranges from {pct(lo_yes)} to {pct(hi_yes)}."
+        st.markdown(why)
     if reading and reading["summary"]:
         st.markdown(f"**What the news says.** {reading['summary']}")
-    st.markdown(f"**The number is the chance of this event within {plan['horizon_days']} days:** {plan['event']}")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Chance the event happens", "n/a" if stale else pct(p_yes))
     if not stale:
@@ -197,8 +209,6 @@ def ask_page():
                 f"so the answer to your question is about {pct(1 - p_yes)}.")
     if info["read"] == 0:
         st.warning("No headlines came back. Check the spelling of the name, or type a shorter one under Advanced.")
-    elif n_sig == 0 and not stale:
-        st.info("Nothing in the recent news changes the picture. The number is the starting value.")
     st.caption("Experimental. No track record. Not a validated forecast.")
 
     t_why, t_cov, t_time, t_all, t_lim = st.tabs(["Why", "Coverage", "Over time", "All headlines", "Limits"])

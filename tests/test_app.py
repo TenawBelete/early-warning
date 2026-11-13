@@ -37,7 +37,7 @@ class App(unittest.TestCase):
             at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
             at.text_input[0].set_value("Will Jane Doe resign as CEO of Acme?").run()
             self.assertFalse(at.exception)
-            at.button[0].click().run()
+            next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
         self.assertFalse(at.error)
         shown = {m.label: m.value for m in at.metric}
@@ -53,7 +53,7 @@ class App(unittest.TestCase):
         with mock.patch.object(live, "collect", side_effect=RuntimeError("offline")):
             at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
             at.text_input[0].set_value("Will Jane Doe resign as CEO of Acme?").run()
-            at.button[0].click().run()
+            next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
         self.assertTrue(at.error)
 
@@ -80,7 +80,7 @@ class App(unittest.TestCase):
                  mock.patch.object(ai, "plan", return_value=plan), mock.patch.object(ai, "read", return_value=reading(stale)):
                 at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
                 at.text_input[0].set_value("will jane doe stay ceo of acme").run()
-                at.button[0].click().run()
+                next(b for b in at.button if b.label == "Analyse").click().run()
             self.assertFalse(at.exception)
             shown = {m.label: m.value for m in at.metric}
             self.assertEqual(shown["Developments that counted"], "1")
@@ -102,7 +102,7 @@ class App(unittest.TestCase):
              mock.patch.object(ai, "plan", side_effect=ai.AIError("quota")):
             at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
             at.text_input[0].set_value("Will Jane Doe resign as CEO of Acme?").run()
-            at.button[0].click().run()
+            next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
         self.assertTrue(any("Keyword rules were used" in w.value for w in at.warning))
 

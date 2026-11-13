@@ -30,14 +30,15 @@ from .live import HALF_LIFE, TEMPLATES, Headline, reliability
 API = "https://generativelanguage.googleapis.com/v1beta"
 STRENGTH = {"weak": 1.3, "medium": 1.8, "strong": 3.0}  # analyst-set, same scale as the keyword rules
 MAX_DEVELOPMENTS = 8
-_model_cache: dict[str, str] = {}
+_model_cache: dict[str, list[str]] = {}
+used: dict[str, str] = {}  # last model that answered, shown in the app
 
 
 class AIError(RuntimeError):
     pass
 
 
-def _http(url: str, key: str, body: dict | None = None, timeout: int = 60) -> dict:
+def _http(url: str, key: str, body: dict | None = None, timeout: int = 40) -> dict:
     req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None,
                                  headers={"x-goog-api-key": key, "Content-Type": "application/json"})
     try:
@@ -65,7 +66,10 @@ def rank_models(models: list[dict]) -> list[str]:
             found.append(((0 if v.group(2) else 1, float(v.group(1))), name))  # full Flash before Lite, then newest
     if not found:
         raise AIError("No suitable Gemini Flash model is available for this key.")
-    return [n for _, n in sorted(found, reverse=True)]
+    full = [n for (is_full, _), n in sorted(found, reverse=True) if is_full]
+    lite = [n for (is_full, _), n in sorted(found, reverse=True) if not is_full]
+    # newest full Flash first, then the newest Lite (faster, a good fallback when the first is slow or refused), then the rest
+    return full[:1] + lite[:1] + full[1:] + lite[1:]
 
 
 def pick_model(models: list[dict]) -> str:
@@ -88,6 +92,7 @@ def ask(key: str, prompt: str, model: str | None = None, http=_http) -> dict:
                         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"}})
             if not model and names[0] != name:
                 _model_cache[key] = [name] + [n for n in names if n != name]  # remember the one that works
+            used["model"] = name
             break
         except AIError as e:
             last = e
@@ -208,3 +213,25 @@ def build_case(question: str, focus: str, reading: dict, sent: list[Headline], p
     spec = {"name": question, "focus_entity": focus,
             "questions": [{"id": "q", "text": question, "kind": "live", "priors": {"yes": prior_yes, "no": 1 - prior_yes}}]}
     return Case("live_ai", spec, catalog, ev, {"focus": (1.0, 0)})
+
+
+def diagnose(key: str, http=_http) -> list[dict]:
+    """Try a tiny request on each candidate model and time it. For the 'Test the AI connection' button."""
+    import time
+    try:
+        names = rank_models(http(f"{API}/models?pageSize=200", key).get("models", []))[:4]
+    except AIError as e:
+        return [{"Model": "(listing models)", "Result": str(e), "Seconds": None}]
+    rows = []
+    for name in names:
+        t = time.time()
+        try:
+            ask(key, 'Return the JSON object {"ok": true}.', model=name, http=http)
+            res = "works"
+        except AIError as e:
+            res = str(e)
+        rows.append({"Model": name, "Result": res, "Seconds": round(time.time() - t, 1)})
+    working = [r["Model"] for r in rows if r["Result"] == "works"]
+    if working:
+        _model_cache[key] = working + [n for n in names if n not in working]  # use the ones that work first
+    return rows
