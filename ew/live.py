@@ -380,3 +380,32 @@ def forecast(question, focus, tagged, kinds, counts, as_of, prior_yes):
 def asks_opposite(question: str, template: str) -> bool:
     """True when the question asks whether the status quo holds ('Will X stay...') rather than whether the event happens."""
     return template != "custom" and bool(re.search(r"\b(stays?|remains?|still be|survives?|keeps? (his|her|the|their) (job|post|role)|continues? as|hold on)\b", question, re.I))
+
+
+VERBS = set("step steps resign resigns quit quits leave leaves stay stays remain remains be become get gets sign signs strike "
+            "strikes attack attacks invade invades buy buys acquire acquires merge merges face faces lose loses win wins "
+            "announce announces reach reaches agree agrees go goes still survive survives keep keeps continue continues "
+            "have has fall falls rise rises launch launches".split())
+
+
+def auto_plan(question: str) -> dict:
+    """Keyword version of the set-up step, used when no AI key is configured."""
+    words = re.sub(r"[?.!]", "", question).split()
+    focus = guess_focus(question)
+    if not focus:  # lower-case question: take the words after "will" up to the first verb
+        body = words[1:] if words and words[0].lower() in {"will", "is", "does", "can", "could", "would", "are", "did"} else words
+        name = []
+        for w in body:
+            if w.lower() in VERBS:
+                break
+            name.append(w)
+        focus = " ".join(name[:4]).title()
+    template = detect_template(question)
+    m = re.search(r"(\d+)\s*(day|week|month|year)", question.lower())
+    horizon = TEMPLATES[template]["base"][1]
+    if m:
+        horizon = int(m.group(1)) * {"day": 1, "week": 7, "month": 30, "year": 365}[m.group(2)]
+    horizon = min(365, max(1, horizon))
+    return {"focus": focus, "related": [], "event": TEMPLATES[template]["name"], "asks_opposite": asks_opposite(question, template),
+            "template": template, "horizon_days": horizon, "prior": base_rate(template, horizon),
+            "prior_reason": "Rough default for this type of event.", "by": "keywords"}

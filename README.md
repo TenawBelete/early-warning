@@ -43,6 +43,11 @@ count half as much. Headlines dated after the chosen cutoff are never used. A ki
 counts only when it is clearly more common in the last 14 days than in the same name's earlier
 coverage; the first version counted every matching headline and pushed famous names to ~100%.
 
+With a free Gemini key in the app's Secrets (see GUIDE.md), an AI model sets up the question
+(focus, event, window, starting value), checks that the question is still valid, and picks out the
+developments that matter (`ew/ai.py`). It never sets the final number; the engine does. The AI
+calls are tested against recorded sample replies only, not against the live service.
+
 This mode is experimental. Keyword rules misread headlines, the starting value is a judgment,
 and nothing in it has been scored against outcomes. The live fetch could not be tested from the
 build environment (no access to news sites there); it is tested against recorded sample data.

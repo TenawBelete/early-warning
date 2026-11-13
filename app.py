@@ -6,6 +6,7 @@ Deploy free:   see GUIDE.md
 from __future__ import annotations
 
 import json
+import os
 from datetime import date, timedelta
 
 import pandas as pd
@@ -14,7 +15,7 @@ import streamlit as st
 from ew.cases import answer, answer_with_range, backtest, list_cases, load_case
 from ew.engine import Settings, V0
 from ew.evidence import visible_as_of
-from ew import live
+from ew import ai, live
 
 st.set_page_config(page_title="Early-warning platform", layout="wide")
 
@@ -53,111 +54,197 @@ def fetch_news(focus: str, related: tuple, as_of: date, weeks: int):
     return live.collect(focus, list(related), as_of, weeks)
 
 
+def ai_key() -> str:
+    try:
+        return str(st.secrets.get("GEMINI_API_KEY", "")).strip()
+    except Exception:  # no secrets file at all
+        return os.environ.get("GEMINI_API_KEY", "").strip()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def ai_plan(key: str, question: str, today: date):
+    return ai.plan(key, question, today)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def ai_read(key: str, question: str, plan_json: str, heads: tuple, as_of: date):
+    return ai.read(key, question, json.loads(plan_json), list(heads), as_of)
+
+
+def run_question(question: str, adv: dict) -> dict | None:
+    """Do everything for one question: set up, fetch, read. Returns the stored result or None on failure."""
+    key, notes = ai_key(), []
+    plan = None
+    if key:
+        try:
+            with st.spinner("Working out what the question is about..."):
+                plan = dict(ai_plan(key, question, date.today()))
+        except ai.AIError as err:
+            notes.append(f"The AI reader was not available ({err}). Keyword rules were used instead.")
+    if plan is None:
+        plan = live.auto_plan(question)
+    if adv["focus"]:
+        plan["focus"] = adv["focus"]
+    if adv["related"]:
+        plan["related"] = adv["related"]
+    if adv["template"] != "auto":
+        plan["template"] = adv["template"]
+    if adv["days"]:
+        plan["horizon_days"] = adv["days"]
+    if adv["prior"] is not None:
+        plan["prior"], plan["prior_reason"] = adv["prior"], "Set by you."
+    if not plan.get("prior"):
+        plan["prior"] = live.base_rate(plan["template"], plan["horizon_days"])
+        plan["prior_reason"] = "Rough default for this type of event."
+    if not plan["focus"]:
+        st.error("I could not tell who or what the question is about. Name the person, company or country in the question, "
+                 "or type it under Advanced.")
+        return None
+    as_of = adv["as_of"]
+    try:
+        with st.spinner(f"Reading {adv['weeks']} weeks of headlines about {plan['focus']}..."):
+            heads, counts, used = fetch_news(plan["focus"], tuple(plan["related"]), as_of, adv["weeks"])
+    except Exception as err:
+        st.error(f"Could not fetch news right now. Wait a minute and try again. Details: {err}")
+        return None
+    reading = sent = None
+    if key and plan.get("by") == "ai" and heads:
+        try:
+            with st.spinner("Reading the headlines..."):
+                reading, sent = ai_read(key, question, json.dumps(plan, sort_keys=True), tuple(heads), as_of)
+        except ai.AIError as err:
+            notes.append(f"The AI reader failed on the headlines ({err}). Keyword rules were used instead.")
+    return dict(question=question, plan=plan, heads=heads, counts=counts, used=used, as_of=as_of, weeks=adv["weeks"],
+                reading=reading, sent=sent, notes=notes, yes=adv["yes"], no=adv["no"])
+
+
 def ask_page():
     st.title("Ask anything")
-    st.caption("Ask whether an event will HAPPEN (leave, strike, sign, be charged), not whether things will stay the same. "
-               "The app does not check facts: make sure the person still holds the role you ask about. "
-               "Type a question about a person, company or country. The app reads dated public news headlines "
-               "and runs them through the same engine as the worked examples. Experimental: read the Limits tab.")
+    has_ai = bool(ai_key())
+    st.caption("Type a question about a person, company or country and press Analyse. The app works out the rest, "
+               "reads dated public news headlines, and estimates the chance. Experimental: see the Limits tab.")
     question = st.text_input("Your question", placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?")
-    c1, c2 = st.columns(2)
-    focus_in = c1.text_input("Who or what is it about (the focus)", placeholder="Jane Doe",
-                             help="The search uses this exact name. Leave empty to let the app guess from the question.")
-    related_in = c2.text_input("Related names to check less deeply (optional, comma-separated)", placeholder="Acme, John Roe",
-                               help="Headlines about these count half as much, so the focus never drifts.")
-    keys_t = list(live.TEMPLATES)
-    guess_t = live.detect_template(question) if question else "custom"
-    c1, c2, c3 = st.columns(3)
-    template = c1.selectbox("Type of event", keys_t, index=keys_t.index(guess_t),
-                            format_func=lambda k: live.TEMPLATES[k]["name"], key=f"tpl_{guess_t}")
-    horizon = c2.number_input("Within how many days", 1, 365, live.TEMPLATES[template]["base"][1])
-    as_of = c3.date_input("Use only news published by the end of", value=date.today(), max_value=date.today(),
-                          help="Pick a past date to replay history without showing the app what happened next.")
-    start = live.base_rate(template, int(horizon))
-    prior = st.slider("Starting value before reading any news (%)", 0.1, 50.0, round(start * 100, 1), 0.1,
-                      key=f"prior_{template}_{horizon}",
-                      help="How often this kind of event happens in a period this long when nothing special is going on. "
-                           "The default is a rough judgment. Change it if you know better.") / 100
-    focus = focus_in.strip() or live.guess_focus(question)
-    yes_default = ", ".join(live.clue_words(question, focus)[:6]) if template == "custom" else ""
-    with st.expander("Clue words (needed for 'Something else', optional otherwise)", expanded=template == "custom"):
-        yes_w = st.text_input("Words in a headline that point towards YES", value=yes_default, key=f"yes_{template}_{question}")
-        no_w = st.text_input("Words in a headline that point towards NO")
-    weeks = st.select_slider("How far back to read", [9, 10, 13, 26], value=10, format_func=lambda w: f"{w} weeks")
+    with st.expander("Advanced (optional: everything here is filled in automatically)"):
+        c1, c2 = st.columns(2)
+        focus_in = c1.text_input("Who or what is it about", placeholder="automatic")
+        related_in = c2.text_input("Related names to check less deeply (comma-separated)", placeholder="automatic")
+        c1, c2, c3 = st.columns(3)
+        template = c1.selectbox("Type of event", ["auto"] + list(live.TEMPLATES),
+                                format_func=lambda k: "Automatic" if k == "auto" else live.TEMPLATES[k]["name"])
+        days = c2.number_input("Within how many days (0 = automatic)", 0, 365, 0)
+        as_of = c3.date_input("Use only news published by the end of", value=date.today(), max_value=date.today(),
+                              help="Pick a past date to replay history without showing the app what happened next.")
+        own = st.checkbox("Set my own starting value")
+        prior = st.slider("Starting value (%)", 0.1, 50.0, 1.0, 0.1, disabled=not own,
+                          help="How often this kind of event happens in a period this long when nothing special is going on.")
+        yes_w = st.text_input("Extra clue words pointing to YES (keyword mode only)")
+        no_w = st.text_input("Extra clue words pointing to NO (keyword mode only)")
+        weeks = st.select_slider("How far back to read", [9, 10, 13, 26], value=10, format_func=lambda w: f"{w} weeks")
+    if not has_ai:
+        st.caption("Running in keyword mode. Add a free Gemini key (see GUIDE.md) and the app will read headlines with an AI model.")
 
     if st.button("Analyse", type="primary"):
-        if not question.strip() or not focus:
-            st.error("Type a question and say who or what it is about.")
-        elif template == "custom" and not (yes_w.strip() or no_w.strip()):
-            st.error("For this type of question, give at least one clue word.")
+        if not question.strip():
+            st.error("Type a question first.")
         else:
-            related = tuple(x.strip() for x in related_in.split(",") if x.strip())[:5]
-            try:
-                with st.spinner(f"Reading {weeks} weeks of headlines about {focus}..."):
-                    heads, counts, used = fetch_news(focus, related, as_of, weeks)
-            except Exception as err:
-                st.error(f"Could not fetch news right now. Wait a minute and try again. Details: {err}")
-                return
-            st.session_state["ask"] = dict(question=question.strip(), focus=focus, heads=heads, counts=counts, used=used,
-                                           as_of=as_of, template=template, prior=prior, horizon=int(horizon),
-                                           yes=yes_w.split(","), no=no_w.split(","), weeks=weeks)
+            adv = dict(focus=focus_in.strip(), related=[x.strip() for x in related_in.split(",") if x.strip()][:5],
+                       template=template, days=int(days), prior=prior / 100 if own else None, as_of=as_of, weeks=weeks,
+                       yes=yes_w.split(","), no=no_w.split(","))
+            out = run_question(question.strip(), adv)
+            if out:
+                st.session_state["ask"] = out
     r = st.session_state.get("ask")
     if not r:
         return
 
-    tagged, kinds = live.tag_headlines(r["heads"], r["template"], r["yes"], r["no"])
-    p_yes, lo_yes, hi_yes, detail_yes, info = live.forecast(r["question"], r["focus"], tagged, kinds, r["counts"],
-                                                            r["as_of"], r["prior"])
-    probs, lo, hi = {"yes": p_yes}, {"yes": lo_yes}, {"yes": hi_yes}
+    plan, as_of, reading = r["plan"], r["as_of"], r["reading"]
+    focus, prior0 = plan["focus"], plan["prior"]
+    tagged, kinds = live.tag_headlines(r["heads"], plan["template"], r["yes"], r["no"])
+    k_p, k_lo, k_hi, k_detail, info = live.forecast(r["question"], focus, tagged, kinds, r["counts"], as_of, prior0)
+    if reading:
+        case = ai.build_case(r["question"], focus, reading, r["sent"], prior0)
+        probs, lo, hi, detail, _ = answer_with_range(case, "q", as_of)
+        p_yes, lo_yes, hi_yes, n_sig = probs["yes"], lo["yes"], hi["yes"], len(reading["developments"])
+    else:
+        p_yes, lo_yes, hi_yes, n_sig = k_p, k_lo, k_hi, info["signals"]
+
     st.divider()
     st.subheader(r["question"])
-    st.caption(f"Focus: {r['focus']}. Window: {r['horizon']} days from {r['as_of']:%d %B %Y}. "
-               f"News source: {', '.join(r['used'])}.")
-    event = live.TEMPLATES[r["template"]]["name"] if r["template"] != "custom" else "What your YES clue words describe"
-    st.markdown(f"**The number below is the chance of this event within {r['horizon']} days: {event.lower()}.**")
+    for note in r["notes"]:
+        st.warning(note)
+    st.caption(f"Focus: {focus}" + (f" (also checked: {', '.join(plan['related'])})" if plan["related"] else "")
+               + f". Window: {plan['horizon_days']} days from {as_of:%d %B %Y}. News source: {', '.join(r['used'])}. "
+               + ("Headlines read by an AI model." if reading else "Headlines read by keyword rules."))
+    stale = bool(reading) and (not reading["premise_ok"] or reading["already_happened"])
+    if reading and not reading["premise_ok"]:
+        st.error("This question looks out of date. " + (reading["premise_note"] or "The news suggests its premise no longer holds.")
+                 + " The number below is not meaningful.")
+    elif (reading and reading["already_happened"]) or (not reading and info["maybe_happened"]):
+        st.error("The news suggests this event has already happened. Check the headlines; the number below is not meaningful.")
+    if reading and reading["summary"]:
+        st.markdown(f"**What the news says.** {reading['summary']}")
+    st.markdown(f"**The number is the chance of this event within {plan['horizon_days']} days:** {plan['event']}")
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Chance the event happens", pct(p_yes))
-    m1.caption(f"Range {pct(lo_yes)} to {pct(hi_yes)}")
-    if live.asks_opposite(r["question"], r["template"]):
+    m1.metric("Chance the event happens", "n/a" if stale else pct(p_yes))
+    if not stale:
+        m1.caption(f"Range {pct(lo_yes)} to {pct(hi_yes)}")
+    m2.metric("Starting value", pct(prior0), help=plan.get("prior_reason", ""))
+    m2.caption(plan.get("prior_reason", ""))
+    m3.metric("Headlines read", info["read"])
+    m4.metric("Developments that counted" if reading else "Unusual signals", n_sig)
+    if plan.get("asks_opposite") and not stale:
         st.info(f"Your question asks whether things stay as they are. That is the opposite of the event, "
                 f"so the answer to your question is about {pct(1 - p_yes)}.")
-    m2.metric("Starting value", pct(r["prior"]))
-    m3.metric("Headlines read", info["read"])
-    m4.metric("Unusual signals", info["signals"])
     if info["read"] == 0:
-        st.warning("No headlines came back. Check the spelling of the focus, or try a shorter name.")
-    elif info["signals"] == 0:
-        st.info("Nothing in the last two weeks stands out from this name's usual coverage. "
-                "The number is the starting value.")
-    if info["maybe_happened"]:
-        st.warning("Several recent headlines report this event directly. It may already have happened: check the headlines.")
-    st.caption("A kind of story counts only when it is clearly more common in the last two weeks than in this name's "
-               "own earlier coverage. This is a keyword reading of headlines with no track record, not a validated forecast.")
+        st.warning("No headlines came back. Check the spelling of the name, or type a shorter one under Advanced.")
+    elif n_sig == 0 and not stale:
+        st.info("Nothing in the recent news changes the picture. The number is the starting value.")
+    st.caption("Experimental. No track record. Not a validated forecast.")
 
     t_why, t_cov, t_time, t_all, t_lim = st.tabs(["Why", "Coverage", "Over time", "All headlines", "Limits"])
     with t_why:
-        effect = {e.id: c for e, c in detail_yes}
-        rows = [x for x in info["rows"] if x["recent"] > 0]
-        if rows:
-            st.dataframe(pd.DataFrame([{
-                "Kind of story": live.LABELS.get(x["signal"], x["signal"]),
-                "About": r["focus"] if x["group"] == "focus" else "related names",
-                "Last 14 days": f"{x['recent']} of {x['recent_total']} ({x['recent'] / x['recent_total']:.0%})",
-                "Usual share": "unknown" if x["usual_share"] is None else f"{x['usual_share']:.0%}",
-                "Counted": "Yes" if x["counted"] else "No, within normal",
-                "Effect": round(effect.get(f"{x['signal']}@{x['group']}", 0.0), 2)}
-                for x in sorted(rows, key=lambda x: (-x["counted"], -x["recent"]))]), hide_index=True, width="stretch")
-            st.caption("Effect above 0 pushes the probability up, below 0 pushes it down.")
-            for x in rows:
-                if x["counted"]:
-                    with st.expander(f"Example headlines: {live.LABELS.get(x['signal'], x['signal'])}"):
-                        for h in x["examples"]:
+        if reading:
+            eff = {e.id: c for e, c in detail["yes"]}
+            if reading["developments"]:
+                st.dataframe(pd.DataFrame([{
+                    "Date": dv["date"], "Development": dv["summary"],
+                    "Pushes the chance": "Up" if dv["direction"] == "up" else "Down", "Strength": dv["strength"],
+                    "Effect": round(eff.get(f"d{n}", 0.0), 2), "Headlines": len(dv["ids"]),
+                    "Source": r["sent"][dv["ids"][0]].link} for n, dv in enumerate(reading["developments"])]),
+                    hide_index=True, column_config=LINK, width="stretch")
+                for n, dv in enumerate(reading["developments"]):
+                    with st.expander(f"Headlines behind: {dv['summary']}"):
+                        for i in dv["ids"][:8]:
+                            h = r["sent"][i]
                             st.markdown(f"- {h.published}: [{h.title}]({h.link}) ({h.source})")
-            st.caption("Read the examples. If the headlines were misread, ignore that signal.")
-        else:
-            st.caption("No headline in the last two weeks matched any clue for this type of event.")
+                st.caption("Each development was picked out by the AI model from the headlines shown. Open them and judge for yourself.")
+            else:
+                st.caption("The AI model found no development in the last four weeks that changes the chance.")
+        rows = [x for x in info["rows"] if x["recent"] > 0]
+        box = st.expander("Keyword check (the simpler method, for comparison)") if reading else st.container()
+        with box:
+            if reading:
+                st.caption(f"Keyword rules alone give {pct(k_p)} (range {pct(k_lo)} to {pct(k_hi)}).")
+            effect = {e.id: c for e, c in k_detail}
+            if rows:
+                st.dataframe(pd.DataFrame([{
+                    "Kind of story": live.LABELS.get(x["signal"], x["signal"]),
+                    "About": focus if x["group"] == "focus" else "related names",
+                    "Last 14 days": f"{x['recent']} of {x['recent_total']} ({x['recent'] / x['recent_total']:.0%})",
+                    "Usual share": "unknown" if x["usual_share"] is None else f"{x['usual_share']:.0%}",
+                    "Counted": "Yes" if x["counted"] else "No, within normal",
+                    "Effect": round(effect.get(f"{x['signal']}@{x['group']}", 0.0), 2)}
+                    for x in sorted(rows, key=lambda x: (-x["counted"], -x["recent"]))]), hide_index=True, width="stretch")
+                if not reading:
+                    for x in rows:
+                        if x["counted"]:
+                            with st.expander(f"Example headlines: {live.LABELS.get(x['signal'], x['signal'])}"):
+                                for h in x["examples"]:
+                                    st.markdown(f"- {h.published}: [{h.title}]({h.link}) ({h.source})")
+            else:
+                st.caption("No recent headline matched a keyword clue for this type of event.")
     with t_cov:
-        ends = [r["as_of"] - timedelta(days=7 * w) for w in range(len(r["counts"]) - 1, -1, -1)]
+        ends = [as_of - timedelta(days=7 * w) for w in range(len(r["counts"]) - 1, -1, -1)]
         st.bar_chart(pd.DataFrame({"Week ending": ends, "Headlines": r["counts"]}).set_index("Week ending"))
         if info["saturated"]:
             st.caption("This name fills the search limit of about 100 headlines almost every week, so a change in attention cannot be measured.")
@@ -165,35 +252,37 @@ def ask_page():
             st.caption("Not enough weeks to judge whether attention is unusual.")
         else:
             st.caption(f"Latest week against this name's own normal: z = {info['attention_z']:.1f} "
-                       "(about 0 is normal, 3 or more is unusual and counts as a weak signal).")
+                       "(about 0 is normal, 3 or more is unusual).")
     with t_time:
-        days = [r["as_of"] - timedelta(days=i) for i in range(min(42, 7 * r["weeks"] - 21) - 1, -1, -2)]
-        st.line_chart(pd.DataFrame({"Date": days, "Chance the event happens": [live.forecast(r["question"], r["focus"], tagged, kinds, [], d, r["prior"])[0] for d in days]}).set_index("Date"),
-                      y_label="Probability")
-        st.caption("Each point uses only headlines published by that day.")
+        days_ = [as_of - timedelta(days=i) for i in range(min(42, 7 * r["weeks"] - 21) - 1, -1, -2)]
+        if reading:
+            ys = [answer(case, "q", d)[0]["yes"] for d in days_]
+        else:
+            ys = [live.forecast(r["question"], focus, tagged, kinds, [], d, prior0)[0] for d in days_]
+        st.line_chart(pd.DataFrame({"Date": days_, "Chance the event happens": ys}).set_index("Date"), y_label="Probability")
+        st.caption("Each point uses only what was published by that day.")
     with t_all:
         st.dataframe(pd.DataFrame([{"Date": h.published, "Headline": h.title, "Outlet": h.source,
-                                    "Found by": r["focus"] if h.query == "focus" else h.query, "Source": h.link}
+                                    "Found by": focus if h.query == "focus" else h.query, "Source": h.link}
                                    for h in sorted(r["heads"], key=lambda h: h.published, reverse=True)]),
                      hide_index=True, column_config=LINK, width="stretch")
     with t_lim:
         st.markdown("""
-- **Compared with its own past.** A kind of story counts only if it is clearly more common in the last 14 days than in the earlier weeks for the same name. A name that is always in trouble will not trigger it; a slow build-up over months will be missed.
-- **Keywords, not understanding.** A headline is tagged by the words in it. Sarcasm, questions and stories about someone else with the same name are misread.
-- **Headlines only.** The article text is not read.
-- **The starting value is a judgment.** The final number depends heavily on it.
-- **Public news only.** Private knowledge is invisible. In the Nvidia example the number stayed near the starting value until the story was reported.
-- **Replays are not fully blind.** Choosing a past date hides later headlines, but today's search engine decides which old headlines to return.
-- **At most about 100 headlines per week** are read for the focus, and only English-language search is used.
+- **It reads headlines, not articles**, and only public news. Private knowledge is invisible. In the Nvidia example the number stayed near the starting value until the story was reported.
+- **With the AI reader:** a language model picks out the developments and suggests the starting value. It can misjudge. It never sets the final number; the engine does, from the developments listed under Why.
+- **Without it:** headlines are tagged by keywords, and a kind of story counts only if it is clearly more common in the last 14 days than before.
+- **The starting value is a judgment**, and the final number depends heavily on it.
+- **Replays are not fully blind.** A past date hides later headlines, but today's search engine chooses which old headlines to return, and an AI model may remember what happened next.
+- **At most about 100 headlines per week** are read for the focus, in English.
 - **No track record.** Nothing here has been scored against outcomes. Use it to organise what the news says, then judge for yourself.
 - **People.** A probability is not an accusation. Use this for public figures and organisations.
 """)
-    log = {"question": r["question"], "focus": r["focus"], "as_of": str(r["as_of"]), "horizon_days": r["horizon"],
-           "event_type": r["template"], "starting_value": r["prior"], "probability": round(probs["yes"], 4),
-           "low": round(lo["yes"], 4), "high": round(hi["yes"], 4), "headlines_read": info["read"],
-           "unusual_signals": info["signals"], "engine": "0.4 live"}
+    log = {"question": r["question"], "focus": focus, "event": plan["event"], "as_of": str(as_of),
+           "horizon_days": plan["horizon_days"], "starting_value": prior0, "probability": None if stale else round(p_yes, 4),
+           "low": round(lo_yes, 4), "high": round(hi_yes, 4), "headlines_read": info["read"],
+           "reader": "ai" if reading else "keywords", "engine": "0.5 live"}
     st.download_button("Download this forecast (keep it to score later)", json.dumps(log, indent=2),
-                       file_name=f"forecast_{r['as_of']}.json", mime="application/json")
+                       file_name=f"forecast_{as_of}.json", mime="application/json")
 
 
 if page.startswith("Ask"):

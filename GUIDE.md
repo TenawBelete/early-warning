@@ -111,3 +111,25 @@ Never put passwords, keys or private information in the repository.
   **History** on that file and revert the change.
 - **"unknown signal type" or "entity is not reachable":** the record uses a name that is
   not in the catalog or the case's link list. Use the drop-downs in the form to avoid typos.
+
+
+## Turn on the AI reader (free, about 5 minutes)
+
+Without this the app reads headlines by keyword rules. With it, an AI model (Google Gemini, free tier)
+works out what your question is about, checks whether the question is still valid, and picks out the
+developments that matter.
+
+1. Go to https://aistudio.google.com and sign in with a Google account.
+2. Click **Get API key**, then **Create API key**. Copy the key (a long string of letters and numbers).
+3. Open your app in the browser. Click **Manage app** (bottom right), then the three dots, then **Settings**, then **Secrets**.
+4. Paste this one line, with your key between the quotes, and click **Save**:
+
+       GEMINI_API_KEY = "paste-your-key-here"
+
+5. The app restarts by itself. The line "Running in keyword mode" disappears from the Ask anything page.
+
+Rules:
+- **Never put the key in a file on GitHub.** Your repository is public; anyone could take the key. The Secrets box is private.
+- The free tier has daily limits. If they are reached the app says so and falls back to keyword rules.
+- On the free tier Google may use what is sent (your question and the headlines) to improve its products.
+- Button names on Google's and Streamlit's sites may differ slightly from the ones above.
