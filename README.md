@@ -34,6 +34,17 @@ The engine itself needs only Python 3.10+. Streamlit and pandas are for the web 
 | `cases/iran_2026/`, `cases/nvidia_2026/` | Case definitions and dated evidence |
 | `results/` | Run summary and dated forecast logs |
 
+## New: Ask anything (live news)
+
+Type any question about a person, company or country. The app fetches dated public headlines
+(Google News, with GDELT as a fallback), tags each one by keyword rules (`ew/live.py`), and runs
+them through the same engine. The focus is read week by week; related names are read once and
+count half as much. Headlines dated after the chosen cutoff are never used.
+
+This mode is experimental. Keyword rules misread headlines, the starting value is a judgment,
+and nothing in it has been scored against outcomes. The live fetch could not be tested from the
+build environment (no access to news sites there); it is tested against recorded sample data.
+
 ## What changed in 0.2
 
 - One engine for every case instead of two code paths; the 0.1 numbers reproduce exactly and a

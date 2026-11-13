@@ -14,6 +14,7 @@ import streamlit as st
 from ew.cases import answer, answer_with_range, backtest, list_cases, load_case
 from ew.engine import Settings, V0
 from ew.evidence import visible_as_of
+from ew import live
 
 st.set_page_config(page_title="Early-warning platform", layout="wide")
 
@@ -44,6 +45,141 @@ LINK = {"Source": st.column_config.LinkColumn("Source", display_text="open")}
 # ---------------------------------------------------------------- sidebar
 st.sidebar.title("Early-warning platform")
 st.sidebar.caption("Prototype. Probabilities from dated public evidence, never certainties.")
+page = st.sidebar.radio("What do you want to do?", ["Ask anything (live news)", "Worked examples (Iran, Nvidia)"])
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_news(focus: str, related: tuple, as_of: date, weeks: int):
+    return live.collect(focus, list(related), as_of, weeks)
+
+
+def ask_page():
+    st.title("Ask anything")
+    st.caption("Type a question about a person, company or country. The app reads dated public news headlines "
+               "and runs them through the same engine as the worked examples. Experimental: read the Limits tab.")
+    question = st.text_input("Your question", placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?")
+    c1, c2 = st.columns(2)
+    focus_in = c1.text_input("Who or what is it about (the focus)", placeholder="Jane Doe",
+                             help="The search uses this exact name. Leave empty to let the app guess from the question.")
+    related_in = c2.text_input("Related names to check less deeply (optional, comma-separated)", placeholder="Acme, John Roe",
+                               help="Headlines about these count half as much, so the focus never drifts.")
+    keys_t = list(live.TEMPLATES)
+    guess_t = live.detect_template(question) if question else "custom"
+    c1, c2, c3 = st.columns(3)
+    template = c1.selectbox("Type of event", keys_t, index=keys_t.index(guess_t),
+                            format_func=lambda k: live.TEMPLATES[k]["name"], key=f"tpl_{guess_t}")
+    horizon = c2.number_input("Within how many days", 1, 365, live.TEMPLATES[template]["base"][1])
+    as_of = c3.date_input("Use only news published by the end of", value=date.today(), max_value=date.today(),
+                          help="Pick a past date to replay history without showing the app what happened next.")
+    start = live.base_rate(template, int(horizon))
+    prior = st.slider("Starting value before reading any news (%)", 0.1, 50.0, round(start * 100, 1), 0.1,
+                      key=f"prior_{template}_{horizon}",
+                      help="How often this kind of event happens in a period this long when nothing special is going on. "
+                           "The default is a rough judgment. Change it if you know better.") / 100
+    focus = focus_in.strip() or live.guess_focus(question)
+    yes_default = ", ".join(live.clue_words(question, focus)[:6]) if template == "custom" else ""
+    with st.expander("Clue words (needed for 'Something else', optional otherwise)", expanded=template == "custom"):
+        yes_w = st.text_input("Words in a headline that point towards YES", value=yes_default, key=f"yes_{template}_{question}")
+        no_w = st.text_input("Words in a headline that point towards NO")
+    weeks = st.select_slider("How far back to read", [9, 10, 13, 26], value=10, format_func=lambda w: f"{w} weeks")
+
+    if st.button("Analyse", type="primary"):
+        if not question.strip() or not focus:
+            st.error("Type a question and say who or what it is about.")
+        elif template == "custom" and not (yes_w.strip() or no_w.strip()):
+            st.error("For this type of question, give at least one clue word.")
+        else:
+            related = tuple(x.strip() for x in related_in.split(",") if x.strip())[:5]
+            try:
+                with st.spinner(f"Reading {weeks} weeks of headlines about {focus}..."):
+                    heads, counts, used = fetch_news(focus, related, as_of, weeks)
+            except Exception as err:
+                st.error(f"Could not fetch news right now. Wait a minute and try again. Details: {err}")
+                return
+            st.session_state["ask"] = dict(question=question.strip(), focus=focus, heads=heads, counts=counts, used=used,
+                                           as_of=as_of, template=template, prior=prior, horizon=int(horizon),
+                                           yes=yes_w.split(","), no=no_w.split(","), weeks=weeks)
+    r = st.session_state.get("ask")
+    if not r:
+        return
+
+    case, info = live.build_case(r["question"], r["focus"], r["heads"], r["counts"], r["as_of"], r["template"],
+                                 r["prior"], r["yes"], r["no"])
+    probs, lo, hi, detail, _ = answer_with_range(case, "q", r["as_of"])
+    st.divider()
+    st.subheader(r["question"])
+    st.caption(f"Focus: {r['focus']}. Window: {r['horizon']} days from {r['as_of']:%d %B %Y}. "
+               f"News source: {', '.join(r['used'])}.")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Probability of yes", pct(probs["yes"]))
+    m1.caption(f"Range {pct(lo['yes'])} to {pct(hi['yes'])}")
+    m2.metric("Starting value", pct(r["prior"]))
+    m3.metric("Headlines read", info["read"])
+    m4.metric("Headlines that counted", info["used"])
+    net = sum(c for _, c in detail["yes"])
+    if info["read"] == 0:
+        st.warning("No headlines came back. Check the spelling of the focus, or try a shorter name.")
+    elif abs(net) < WEAK:
+        st.info("Very little in the news bears on this question. The number is essentially the starting value.")
+    st.caption("This is a keyword reading of headlines, not a validated forecast. It has no track record.")
+
+    t_why, t_cov, t_time, t_all, t_lim = st.tabs(["Why", "Coverage", "Over time", "All headlines", "Limits"])
+    with t_why:
+        a, b = st.columns(2)
+        up = [(e, c) for e, c in detail["yes"] if c > 0][:12]
+        down = [(e, c) for e, c in detail["yes"] if c < 0][:12]
+        for col, title, pairs in ((a, "Pushing it up", up), (b, "Pushing it down", down)):
+            col.markdown(title)
+            if pairs:
+                col.dataframe(pd.DataFrame([{"Date": e.public_date, "Headline": e.summary, "Read as": e.type.replace("_", " "),
+                                             "Effect": round(c, 2), "Outlet": e.note, "Source": e.source} for e, c in pairs]),
+                              hide_index=True, column_config=LINK, width="stretch")
+            else:
+                col.caption("Nothing found.")
+        st.caption("Check the 'Read as' column. If a headline was misread, the number is wrong by that much.")
+    with t_cov:
+        ends = [r["as_of"] - timedelta(days=7 * w) for w in range(len(r["counts"]) - 1, -1, -1)]
+        st.bar_chart(pd.DataFrame({"Week ending": ends, "Headlines": r["counts"]}).set_index("Week ending"))
+        if info["saturated"]:
+            st.caption("This name fills the search limit of about 100 headlines almost every week, so a change in attention cannot be measured.")
+        elif info["attention_z"] is None:
+            st.caption("Not enough weeks to judge whether attention is unusual.")
+        else:
+            st.caption(f"Latest week against this name's own normal: z = {info['attention_z']:.1f} "
+                       "(about 0 is normal, 3 or more is unusual and counts as a weak signal).")
+    with t_time:
+        days = [r["as_of"] - timedelta(days=i) for i in range(min(60, 7 * r["weeks"]) - 1, -1, -1)]
+        st.line_chart(pd.DataFrame({"Date": days, "Probability of yes": [answer(case, "q", d)[0]["yes"] for d in days]}).set_index("Date"),
+                      y_label="Probability")
+        st.caption("Each point uses only headlines published by that day.")
+    with t_all:
+        st.dataframe(pd.DataFrame([{"Date": h.published, "Headline": h.title, "Outlet": h.source,
+                                    "Found by": r["focus"] if h.query == "focus" else h.query, "Source": h.link}
+                                   for h in sorted(r["heads"], key=lambda h: h.published, reverse=True)]),
+                     hide_index=True, column_config=LINK, width="stretch")
+    with t_lim:
+        st.markdown("""
+- **Keywords, not understanding.** A headline is tagged by the words in it. Sarcasm, questions and stories about someone else with the same name are misread.
+- **Headlines only.** The article text is not read.
+- **The starting value is a judgment.** The final number depends heavily on it.
+- **Public news only.** Private knowledge is invisible. In the Nvidia example the number stayed near the starting value until the story was reported.
+- **Replays are not fully blind.** Choosing a past date hides later headlines, but today's search engine decides which old headlines to return.
+- **At most about 100 headlines per week** are read for the focus, and only English-language search is used.
+- **No track record.** Nothing here has been scored against outcomes. Use it to organise what the news says, then judge for yourself.
+- **People.** A probability is not an accusation. Use this for public figures and organisations.
+""")
+    log = {"question": r["question"], "focus": r["focus"], "as_of": str(r["as_of"]), "horizon_days": r["horizon"],
+           "event_type": r["template"], "starting_value": r["prior"], "probability": round(probs["yes"], 4),
+           "low": round(lo["yes"], 4), "high": round(hi["yes"], 4), "headlines_read": info["read"],
+           "headlines_counted": info["used"], "engine": "0.3 live"}
+    st.download_button("Download this forecast (keep it to score later)", json.dumps(log, indent=2),
+                       file_name=f"forecast_{r['as_of']}.json", mime="application/json")
+
+
+if page.startswith("Ask"):
+    ask_page()
+    st.stop()
+
 keys = list_cases()
 names = {k: get_case(k).spec["name"] for k in keys}
 key = st.sidebar.selectbox("Case", keys, format_func=lambda k: names[k])
