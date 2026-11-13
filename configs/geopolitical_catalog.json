@@ -1,0 +1,293 @@
+{
+ "_note": "Version 0 likelihood ratios. Each value says how much more likely this signal type is in the 14 days before the hypothesis comes true than in an ordinary standoff period (standoff = 1.0). These are analyst-set starting values fixed BEFORE the backtest was run. They are not learned from data and must be replaced by measured ratios from many past episodes.",
+ "half_life_days": {
+  "military": 21,
+  "protective": 7,
+  "planning": 10,
+  "rhetoric": 7,
+  "diplomacy": 7,
+  "market": 5,
+  "incident": 10,
+  "context": 30,
+  "economic": 14
+ },
+ "types": {
+  "force_surge": {
+   "family": "military",
+   "lr": {
+    "strike": 2.0,
+    "deal": 1.1
+   }
+  },
+  "offensive_posture": {
+   "family": "military",
+   "lr": {
+    "strike": 2.5
+   }
+  },
+  "exercise": {
+   "family": "military",
+   "lr": {
+    "strike": 1.2
+   }
+  },
+  "force_protection_drawdown": {
+   "family": "protective",
+   "lr": {
+    "strike": 3.0,
+    "deal": 0.8
+   }
+  },
+  "embassy_departure": {
+   "family": "protective",
+   "lr": {
+    "strike": 3.5,
+    "deal": 0.6
+   }
+  },
+  "departure_advisory": {
+   "family": "protective",
+   "lr": {
+    "strike": 1.8,
+    "deal": 0.8
+   }
+  },
+  "airline_suspension": {
+   "family": "protective",
+   "lr": {
+    "strike": 1.5,
+    "deal": 0.9
+   }
+  },
+  "strike_planning_report": {
+   "family": "planning",
+   "lr": {
+    "strike": 2.0,
+    "deal": 0.9
+   }
+  },
+  "sustained_campaign_report": {
+   "family": "planning",
+   "lr": {
+    "strike": 2.0,
+    "deal": 0.9,
+    "decap": 1.5
+   }
+  },
+  "deadline": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 1.8,
+    "deal": 1.4
+   }
+  },
+  "threat_statement": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 1.2
+   }
+  },
+  "intervention_pledge": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 1.6,
+    "deal": 0.7,
+    "decap": 1.3
+   }
+  },
+  "casus_belli": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 1.6,
+    "deal": 0.8
+   }
+  },
+  "leader_dissatisfied": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 1.8,
+    "deal": 0.6
+   }
+  },
+  "regime_change_rhetoric": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 1.3,
+    "deal": 0.6,
+    "decap": 2.0
+   }
+  },
+  "atrocity_framing": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 1.3,
+    "deal": 0.7,
+    "decap": 1.4
+   }
+  },
+  "ally_lobbying": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 1.4,
+    "deal": 0.8
+   }
+  },
+  "target_defiance": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 1.1,
+    "deal": 0.8
+   }
+  },
+  "talks_cancelled": {
+   "family": "diplomacy",
+   "lr": {
+    "strike": 1.5,
+    "deal": 0.4
+   }
+  },
+  "kinetic_incident": {
+   "family": "incident",
+   "lr": {
+    "strike": 1.4,
+    "deal": 0.8
+   }
+  },
+  "target_hedging": {
+   "family": "incident",
+   "lr": {
+    "strike": 1.5,
+    "deal": 0.9
+   }
+  },
+  "leader_sheltering": {
+   "family": "incident",
+   "lr": {
+    "strike": 1.3,
+    "deal": 0.9,
+    "decap": 1.3
+   }
+  },
+  "market_stress": {
+   "family": "market",
+   "lr": {
+    "strike": 1.5,
+    "deal": 0.9
+   }
+  },
+  "market_calm": {
+   "family": "market",
+   "lr": {
+    "strike": 0.8,
+    "deal": 1.2
+   }
+  },
+  "sanctions": {
+   "family": "economic",
+   "lr": {
+    "strike": 1.1,
+    "deal": 0.8
+   }
+  },
+  "target_unrest": {
+   "family": "context",
+   "lr": {
+    "strike": 1.1,
+    "decap": 1.1
+   }
+  },
+  "repression_trigger": {
+   "family": "context",
+   "lr": {
+    "strike": 1.5,
+    "deal": 0.8,
+    "decap": 1.3
+   }
+  },
+  "talks_scheduled": {
+   "family": "diplomacy",
+   "lr": {
+    "strike": 0.6,
+    "deal": 1.5
+   }
+  },
+  "talks_progress": {
+   "family": "diplomacy",
+   "lr": {
+    "strike": 0.6,
+    "deal": 2.0
+   }
+  },
+  "breakthrough_claim": {
+   "family": "diplomacy",
+   "lr": {
+    "strike": 0.5,
+    "deal": 3.0
+   }
+  },
+  "time_given": {
+   "family": "diplomacy",
+   "lr": {
+    "strike": 0.7,
+    "deal": 1.3
+   }
+  },
+  "scheduled_diplomacy": {
+   "family": "diplomacy",
+   "lr": {
+    "strike": 0.7,
+    "deal": 1.2
+   }
+  },
+  "prefers_diplomacy": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 0.7,
+    "deal": 1.3
+   }
+  },
+  "stand_down": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 0.3,
+    "deal": 1.2
+   }
+  },
+  "target_conciliation": {
+   "family": "rhetoric",
+   "lr": {
+    "strike": 0.9,
+    "deal": 1.3
+   }
+  },
+  "ally_base_denial": {
+   "family": "military",
+   "lr": {
+    "strike": 0.85
+   }
+  },
+  "intel_contradicts": {
+   "family": "planning",
+   "lr": {
+    "strike": 0.9
+   }
+  },
+  "decision_taken": {
+   "family": "planning",
+   "lr": {
+    "strike": 20.0,
+    "deal": 0.2,
+    "decap": 8.0
+   }
+  },
+  "decap_planning": {
+   "family": "planning",
+   "lr": {
+    "strike": 3.0,
+    "deal": 0.5,
+    "decap": 6.0
+   }
+  }
+ },
+ "watch_families": []
+}

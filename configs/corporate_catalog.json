@@ -1,0 +1,320 @@
+{
+ "_note": "Version 0 likelihood ratios for corporate-leadership questions, fixed before the Nvidia runs and not adjusted afterwards. Each number says how much more likely the signal is when the named outcome is coming than when it is not (1.0 = no information). Analyst-set, not learned from data.",
+ "half_life_days": {
+  "exposure": 180,
+  "standing": 30,
+  "scandal": 21,
+  "response": 10,
+  "official": 21,
+  "governance": 30,
+  "market": 10,
+  "pressure": 10,
+  "succession": 60,
+  "legal": 60,
+  "testimony": 14
+ },
+ "types": {
+  "personal_link_to_investigated_party": {
+   "family": "exposure",
+   "lr": {
+    "exit": 1.5
+   }
+  },
+  "investor_question_on_conduct": {
+   "family": "exposure",
+   "lr": {
+    "exit": 1.5
+   }
+  },
+  "counterpart_trouble": {
+   "family": "exposure",
+   "lr": {
+    "exit": 1.5
+   }
+  },
+  "government_knows_privately": {
+   "family": "official",
+   "lr": {
+    "exit": 3.0
+   }
+  },
+  "political_favor": {
+   "family": "standing",
+   "lr": {
+    "exit": 0.8
+   }
+  },
+  "business_strength": {
+   "family": "standing",
+   "lr": {
+    "exit": 0.8
+   }
+  },
+  "normal_public_activity": {
+   "family": "standing",
+   "lr": {
+    "exit": 0.9
+   }
+  },
+  "no_succession_plan": {
+   "family": "standing",
+   "lr": {
+    "exit": 1.0
+   }
+  },
+  "media_report_security_concern": {
+   "family": "scandal",
+   "lr": {
+    "exit": 6.0
+   }
+  },
+  "media_report_misconduct": {
+   "family": "scandal",
+   "lr": {
+    "exit": 4.0
+   }
+  },
+  "ceo_admission": {
+   "family": "scandal",
+   "lr": {
+    "exit": 3.0
+   }
+  },
+  "business_harm_allegation": {
+   "family": "scandal",
+   "lr": {
+    "exit": 3.0,
+    "charged": 1.5
+   }
+  },
+  "subordinate_relationship_report": {
+   "family": "scandal",
+   "lr": {
+    "exit": 8.0
+   }
+  },
+  "company_defends_ceo": {
+   "family": "response",
+   "lr": {
+    "exit": 0.6
+   }
+  },
+  "president_defends": {
+   "family": "response",
+   "lr": {
+    "exit": 0.7
+   }
+  },
+  "board_backs_ceo": {
+   "family": "response",
+   "lr": {
+    "exit": 0.6
+   }
+  },
+  "congressional_inquiry": {
+   "family": "official",
+   "lr": {
+    "exit": 2.5
+   }
+  },
+  "law_enforcement_investigation": {
+   "family": "official",
+   "lr": {
+    "exit": 3.0
+   }
+  },
+  "shareholder_suit": {
+   "family": "official",
+   "lr": {
+    "exit": 1.3
+   }
+  },
+  "board_investigation": {
+   "family": "governance",
+   "lr": {
+    "exit": 6.0
+   }
+  },
+  "outside_counsel_retained": {
+   "family": "governance",
+   "lr": {
+    "exit": 2.0
+   }
+  },
+  "board_meeting_on_ouster": {
+   "family": "governance",
+   "lr": {
+    "exit": 15.0
+   }
+  },
+  "stock_drop_major": {
+   "family": "market",
+   "lr": {
+    "exit": 1.8
+   }
+  },
+  "prediction_market_high": {
+   "family": "market",
+   "lr": {
+    "exit": 3.0
+   }
+  },
+  "politician_calls_for_resignation": {
+   "family": "pressure",
+   "lr": {
+    "exit": 1.8
+   }
+  },
+  "interim_keeps_prior_role": {
+   "family": "succession",
+   "lr": {
+    "kress": 0.75
+   }
+  },
+  "search_open": {
+   "family": "succession",
+   "lr": {
+    "external_chip": 1.1,
+    "external_other": 1.1
+   }
+  },
+  "board_external_search": {
+   "family": "succession",
+   "lr": {
+    "external_chip": 1.4,
+    "external_other": 1.4,
+    "named_by_june": 1.3
+   }
+  },
+  "analysts_favor_engineer": {
+   "family": "succession",
+   "lr": {
+    "other_internal": 1.6,
+    "kress": 0.85
+   }
+  },
+  "analysts_favor_interim": {
+   "family": "succession",
+   "lr": {
+    "kress": 1.4
+   }
+  },
+  "market_favors_internal_engineer": {
+   "family": "succession",
+   "lr": {
+    "other_internal": 1.2,
+    "kress": 1.1
+   }
+  },
+  "no_obvious_internal": {
+   "family": "succession",
+   "lr": {
+    "external_chip": 1.3,
+    "external_other": 1.3,
+    "other_internal": 0.8,
+    "kress": 0.9,
+    "named_by_june": 0.8
+   }
+  },
+  "industry_insider_named": {
+   "family": "succession",
+   "lr": {
+    "external_chip": 1.4
+   }
+  },
+  "political_endorsement_outsider": {
+   "family": "succession",
+   "lr": {
+    "external_other": 1.3
+   }
+  },
+  "internal_alt_named": {
+   "family": "succession",
+   "lr": {
+    "other_internal": 1.2
+   }
+  },
+  "pressure_for_speed": {
+   "family": "succession",
+   "lr": {
+    "named_by_june": 1.2
+   }
+  },
+  "analyst_expects_slow": {
+   "family": "succession",
+   "lr": {
+    "named_by_june": 0.8
+   }
+  },
+  "founder_left_all_roles": {
+   "family": "legal",
+   "lr": {
+    "huang_returns": 0.5,
+    "role_2027": 0.6
+   }
+  },
+  "return_support": {
+   "family": "legal",
+   "lr": {
+    "huang_returns": 1.3,
+    "role_2027": 1.4
+   }
+  },
+  "large_holder": {
+   "family": "legal",
+   "lr": {
+    "huang_returns": 1.2,
+    "role_2027": 1.2
+   }
+  },
+  "legal_exposure": {
+   "family": "legal",
+   "lr": {
+    "testifies": 0.6,
+    "role_2027": 0.6,
+    "charged": 2.0,
+    "huang_returns": 0.6
+   }
+  },
+  "political_protection": {
+   "family": "legal",
+   "lr": {
+    "charged": 0.7,
+    "role_2027": 1.2
+   }
+  },
+  "victim_framing": {
+   "family": "legal",
+   "lr": {
+    "charged": 0.6
+   }
+  },
+  "counterpart_criminal_probe": {
+   "family": "legal",
+   "lr": {
+    "charged": 1.3
+   }
+  },
+  "testimony_agreed": {
+   "family": "testimony",
+   "lr": {
+    "testifies": 2.0
+   }
+  },
+  "testimony_unscheduled": {
+   "family": "testimony",
+   "lr": {
+    "testifies": 0.7
+   }
+  },
+  "chair_pushing_fast": {
+   "family": "testimony",
+   "lr": {
+    "testifies": 1.3
+   }
+  }
+ },
+ "watch_families": [
+  "exposure"
+ ]
+}

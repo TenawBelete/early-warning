@@ -1,0 +1,145 @@
+{
+ "name": "Iran, January to February 2026",
+ "focus_entity": "iran_leadership",
+ "catalog": "geopolitical_catalog.json",
+ "graph": {
+  "edges": [
+   [
+    "iran_leadership",
+    "iran_gov",
+    0.95
+   ],
+   [
+    "iran_leadership",
+    "iran_military",
+    0.95
+   ],
+   [
+    "iran_leadership",
+    "us_president",
+    0.9
+   ],
+   [
+    "iran_leadership",
+    "israel_gov",
+    0.9
+   ],
+   [
+    "iran_leadership",
+    "iran_opposition",
+    0.6
+   ],
+   [
+    "us_president",
+    "us_military",
+    0.95
+   ],
+   [
+    "us_president",
+    "us_state_dept",
+    0.9
+   ],
+   [
+    "us_president",
+    "us_officials",
+    0.85
+   ],
+   [
+    "us_president",
+    "mediators",
+    0.7
+   ],
+   [
+    "iran_gov",
+    "mediators",
+    0.7
+   ],
+   [
+    "us_president",
+    "uk_gov",
+    0.6
+   ],
+   [
+    "us_president",
+    "markets",
+    0.6
+   ],
+   [
+    "us_state_dept",
+    "third_countries",
+    0.7
+   ],
+   [
+    "third_countries",
+    "airlines",
+    0.7
+   ],
+   [
+    "iran_military",
+    "proxies",
+    0.6
+   ]
+  ],
+  "max_hops": 4
+ },
+ "questions": [
+  {
+   "id": "next14",
+   "kind": "backtest",
+   "text": "What happens between the US or Israel and Iran in the next 14 days?",
+   "priors": {
+    "strike": 0.05,
+    "deal": 0.03,
+    "standoff": 0.92
+   },
+   "prior_rationale": "Strike: from April 2024 to December 2025 there were roughly 45 fourteen-day windows and 3 contained the start of US or Israeli strikes on Iranian territory (April 2024, October 2024, June 2025), about 7 percent; rounded down to 5 percent. Deal: no agreement was concluded in that period; 3 percent is a judgment value.",
+   "horizon_days": 14,
+   "labels": {
+    "strike": "US or Israeli strikes on Iranian territory",
+    "deal": "A concluded nuclear agreement",
+    "standoff": "Neither"
+   },
+   "outcome": {
+    "hypothesis": "strike",
+    "date": "2026-02-28"
+   },
+   "as_of_dates": [
+    "2026-01-05",
+    "2026-01-14",
+    "2026-01-20",
+    "2026-02-01",
+    "2026-02-10",
+    "2026-02-15",
+    "2026-02-21",
+    "2026-02-25",
+    "2026-02-27"
+   ]
+  },
+  {
+   "id": "decap",
+   "kind": "conditional",
+   "text": "If strikes happen, is the supreme leader killed?",
+   "priors": {
+    "decap": 0.05,
+    "no": 0.95
+   },
+   "prior_rationale": "None of the three earlier strike episodes killed the supreme leader. 5 percent is a judgment value, not a measured rate."
+  }
+ ],
+ "derived": [
+  {
+   "id": "leader_killed",
+   "text": "Supreme leader killed within 14 days",
+   "product_of": [
+    [
+     "next14",
+     "strike"
+    ],
+    [
+     "decap",
+     "decap"
+    ]
+   ]
+  }
+ ]
+}

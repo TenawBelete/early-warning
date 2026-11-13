@@ -1,0 +1,303 @@
+[
+  {
+    "id": "next_ceo",
+    "question": "Who is Nvidia's next permanent chief executive, if one is named by 31 December 2027?",
+    "logged_on": "2026-11-12",
+    "resolve_by": "2027-12-31",
+    "priors": {
+      "kress": 0.3,
+      "other_internal": 0.27,
+      "external_chip": 0.2,
+      "external_other": 0.2,
+      "huang_returns": 0.03
+    },
+    "prior_rationale": "Judgment values: interim chiefs are confirmed in a minority of cases, and boards split roughly evenly between insiders and outsiders after a forced exit. Not measured in this project.",
+    "forecast": {
+      "kress": 0.2076,
+      "other_internal": 0.2712,
+      "external_chip": 0.2578,
+      "external_other": 0.2505,
+      "huang_returns": 0.0129
+    },
+    "drivers": {
+      "kress": [
+        {
+          "summary": "Kress is named interim chief and keeps her finance role until a permanent successor is chosen",
+          "log_odds": -0.221,
+          "source": "https://www.cnbc.com/2026/11/12/nvidia-jensen-huang-ceo-live-updates.html"
+        },
+        {
+          "summary": "Analysts had already described Kress as a top contender",
+          "log_odds": 0.179,
+          "source": "https://www.cnn.com/2026/11/11/business/live-news/nvidia-jensen-huang-investigation-fallout"
+        },
+        {
+          "summary": "Analysts quoted by Reuters expect an engineer for the permanent job and name Ian Buck as the strongest long-term insider",
+          "log_odds": -0.067,
+          "source": "https://live.euronext.com/en/financial-news/who-would-be-next-ceo-nvidia-top-engineer-and-cfo-favored-candidates"
+        },
+        {
+          "summary": "Commentators say there is no prepared heir and no obvious internal candidate",
+          "log_odds": -0.027,
+          "source": "https://www.euronews.com/2026/11/12/what-is-next-for-nvidia-after-ceo-jensen-huang-resigns"
+        }
+      ],
+      "other_internal": [
+        {
+          "summary": "Analysts quoted by Reuters expect an engineer for the permanent job and name Ian Buck as the strongest long-term insider",
+          "log_odds": 0.278,
+          "source": "https://live.euronext.com/en/financial-news/who-would-be-next-ceo-nvidia-top-engineer-and-cfo-favored-candidates"
+        },
+        {
+          "summary": "Commentators say there is no prepared heir and no obvious internal candidate",
+          "log_odds": -0.119,
+          "source": "https://www.euronews.com/2026/11/12/what-is-next-for-nvidia-after-ceo-jensen-huang-resigns"
+        },
+        {
+          "summary": "William Blair analysts call chief software architect Jonathan Ross a credible candidate",
+          "log_odds": 0.068,
+          "source": "https://www.cnn.com/2026/11/11/business/live-news/nvidia-jensen-huang-investigation-fallout"
+        },
+        {
+          "summary": "A thinly traded prediction market ranks Buck first and Kress second",
+          "log_odds": 0.034,
+          "source": "https://live.euronext.com/en/financial-news/who-would-be-next-ceo-nvidia-top-engineer-and-cfo-favored-candidates"
+        }
+      ],
+      "external_chip": [
+        {
+          "summary": "Bloomberg reports the board has been working with an outside firm to identify external candidates",
+          "log_odds": 0.253,
+          "source": "https://www.cnn.com/2026/11/11/business/live-news/nvidia-jensen-huang-investigation-fallout"
+        },
+        {
+          "summary": "Arm's Rene Haas, AMD's Lisa Su and Intel's Lip-Bu Tan are named as outside options",
+          "log_odds": 0.161,
+          "source": "https://www.euronews.com/2026/11/12/what-is-next-for-nvidia-after-ceo-jensen-huang-resigns"
+        },
+        {
+          "summary": "Commentators say there is no prepared heir and no obvious internal candidate",
+          "log_odds": 0.068,
+          "source": "https://www.euronews.com/2026/11/12/what-is-next-for-nvidia-after-ceo-jensen-huang-resigns"
+        },
+        {
+          "summary": "Nvidia says the search will consider internal and external candidates",
+          "log_odds": 0.028,
+          "source": "https://www.cnbc.com/2026/11/12/nvidia-jensen-huang-ceo-live-updates.html"
+        }
+      ],
+      "external_other": [
+        {
+          "summary": "Bloomberg reports the board has been working with an outside firm to identify external candidates",
+          "log_odds": 0.253,
+          "source": "https://www.cnn.com/2026/11/11/business/live-news/nvidia-jensen-huang-investigation-fallout"
+        },
+        {
+          "summary": "Trump publicly says Tim Cook should take the job",
+          "log_odds": 0.132,
+          "source": "https://www.newsweek.com/trump-tim-cook-replace-jensen-huang-nvidia-ceo-12706299"
+        },
+        {
+          "summary": "Commentators say there is no prepared heir and no obvious internal candidate",
+          "log_odds": 0.068,
+          "source": "https://www.euronews.com/2026/11/12/what-is-next-for-nvidia-after-ceo-jensen-huang-resigns"
+        },
+        {
+          "summary": "Nvidia says the search will consider internal and external candidates",
+          "log_odds": 0.028,
+          "source": "https://www.cnbc.com/2026/11/12/nvidia-jensen-huang-ceo-live-updates.html"
+        }
+      ],
+      "huang_returns": [
+        {
+          "summary": "Huang resigns as president, chief executive and director, effective immediately",
+          "log_odds": -0.624,
+          "source": "https://www.newsweek.com/trump-tim-cook-replace-jensen-huang-nvidia-ceo-12706299"
+        },
+        {
+          "summary": "The relationship has prompted FBI and congressional investigations and a shareholder class action",
+          "log_odds": -0.229,
+          "source": "https://www.aljazeera.com/news/2026/11/12/ai-titan-jensen-huang-out-as-nvidia-ceo"
+        },
+        {
+          "summary": "Huang still owns about 3.6% of Nvidia",
+          "log_odds": 0.164,
+          "source": "https://www.aljazeera.com/news/2026/11/12/ai-titan-jensen-huang-out-as-nvidia-ceo"
+        },
+        {
+          "summary": "Some prominent voices call letting Huang go a mistake",
+          "log_odds": 0.098,
+          "source": "https://www.cnn.com/2026/11/11/business/live-news/nvidia-jensen-huang-investigation-fallout"
+        }
+      ]
+    },
+    "resolved": null,
+    "labels": {
+      "kress": "Colette Kress (interim made permanent)",
+      "other_internal": "Another Nvidia executive",
+      "external_chip": "Outside hire who runs or ran a chip company",
+      "external_other": "Outside hire from elsewhere",
+      "huang_returns": "Jensen Huang returns"
+    }
+  },
+  {
+    "id": "named_by_june",
+    "question": "Nvidia names a permanent chief executive by 30 June 2027",
+    "logged_on": "2026-11-12",
+    "resolve_by": "2027-06-30",
+    "priors": {
+      "named_by_june": 0.6,
+      "no": 0.4
+    },
+    "prior_rationale": "Judgment value: searches after an abrupt exit usually take several months.",
+    "forecast": {
+      "named_by_june": 0.6119,
+      "no": 0.3881
+    },
+    "drivers": {
+      "named_by_june": [
+        {
+          "summary": "Bloomberg reports the board has been working with an outside firm to identify external candidates",
+          "log_odds": 0.197,
+          "source": "https://www.cnn.com/2026/11/11/business/live-news/nvidia-jensen-huang-investigation-fallout"
+        },
+        {
+          "summary": "An investor quoted by Reuters says a permanent replacement will not be quick",
+          "log_odds": -0.132,
+          "source": "https://live.euronext.com/en/financial-news/who-would-be-next-ceo-nvidia-top-engineer-and-cfo-favored-candidates"
+        },
+        {
+          "summary": "Commentators say there is no prepared heir and no obvious internal candidate",
+          "log_odds": -0.083,
+          "source": "https://www.euronews.com/2026/11/12/what-is-next-for-nvidia-after-ceo-jensen-huang-resigns"
+        },
+        {
+          "summary": "A governance professor says the board must present a succession plan quickly",
+          "log_odds": 0.068,
+          "source": "https://www.cnbc.com/2026/11/12/nvidia-jensen-huang-ceo-live-updates.html"
+        }
+      ]
+    },
+    "resolved": null
+  },
+  {
+    "id": "testifies",
+    "question": "Jensen Huang appears before House committees, in open or closed session, by 26 November 2026",
+    "logged_on": "2026-11-12",
+    "resolve_by": "2026-11-26",
+    "priors": {
+      "testifies": 0.55,
+      "no": 0.45
+    },
+    "prior_rationale": "Judgment value: agreed voluntary appearances often slip past the first target date.",
+    "forecast": {
+      "testifies": 0.5457,
+      "no": 0.4543
+    },
+    "drivers": {
+      "testifies": [
+        {
+          "summary": "House committee chairs say Huang has agreed to appear before the Thanksgiving recess",
+          "log_odds": 0.468,
+          "source": "https://www.ms.now/news/nvidia-jensen-huang-resigns-affair-china-spying"
+        },
+        {
+          "summary": "The relationship has prompted FBI and congressional investigations and a shareholder class action",
+          "log_odds": -0.327,
+          "source": "https://www.aljazeera.com/news/2026/11/12/ai-titan-jensen-huang-out-as-nvidia-ceo"
+        },
+        {
+          "summary": "No date has been set; the sides are still discussing one",
+          "log_odds": -0.241,
+          "source": "https://www.forbes.com/sites/maryroeloffs/2026/11/12/jensen-huang-will-brief-lawmakers-on-affair-with-alleged-chinese-spy-report-says/"
+        },
+        {
+          "summary": "The Foreign Affairs chair says he hopes to bring Huang in within about a week",
+          "log_odds": 0.083,
+          "source": "https://dailycaller.com/2026/11/12/nvidia-jenson-huang-testify-house-foreign-affairs-committee/"
+        }
+      ]
+    },
+    "resolved": null
+  },
+  {
+    "id": "role_2027",
+    "question": "Jensen Huang holds a formal Nvidia role (employee, director or named adviser) on 31 December 2027",
+    "logged_on": "2026-11-12",
+    "resolve_by": "2027-12-31",
+    "priors": {
+      "role_2027": 0.08,
+      "no": 0.92
+    },
+    "prior_rationale": "Judgment value: leaders who resign during an investigation rarely hold a formal role again within about a year.",
+    "forecast": {
+      "role_2027": 0.0588,
+      "no": 0.9412
+    },
+    "drivers": {
+      "role_2027": [
+        {
+          "summary": "Huang resigns as president, chief executive and director, effective immediately",
+          "log_odds": -0.46,
+          "source": "https://www.newsweek.com/trump-tim-cook-replace-jensen-huang-nvidia-ceo-12706299"
+        },
+        {
+          "summary": "The relationship has prompted FBI and congressional investigations and a shareholder class action",
+          "log_odds": -0.229,
+          "source": "https://www.aljazeera.com/news/2026/11/12/ai-titan-jensen-huang-out-as-nvidia-ceo"
+        },
+        {
+          "summary": "Some prominent voices call letting Huang go a mistake",
+          "log_odds": 0.179,
+          "source": "https://www.cnn.com/2026/11/11/business/live-news/nvidia-jensen-huang-investigation-fallout"
+        },
+        {
+          "summary": "Huang still owns about 3.6% of Nvidia",
+          "log_odds": 0.115,
+          "source": "https://www.aljazeera.com/news/2026/11/12/ai-titan-jensen-huang-out-as-nvidia-ceo"
+        }
+      ]
+    },
+    "resolved": null
+  },
+  {
+    "id": "charged",
+    "question": "Jensen Huang is criminally charged in the United States by 31 December 2027",
+    "logged_on": "2026-11-12",
+    "resolve_by": "2027-12-31",
+    "priors": {
+      "charged": 0.03,
+      "no": 0.97
+    },
+    "prior_rationale": "Judgment value: executives in corporate scandals are seldom charged, and rarely within about a year. A legal-exposure question, not an allegation.",
+    "forecast": {
+      "charged": 0.0367,
+      "no": 0.9633
+    },
+    "drivers": {
+      "charged": [
+        {
+          "summary": "The relationship has prompted FBI and congressional investigations and a shareholder class action",
+          "log_odds": 0.444,
+          "source": "https://www.aljazeera.com/news/2026/11/12/ai-titan-jensen-huang-out-as-nvidia-ceo"
+        },
+        {
+          "summary": "The board frames its inquiry around whether Huang was the target of a foreign intelligence effort",
+          "log_odds": -0.417,
+          "source": "https://www.forbes.com/sites/alisondurkee/2026/11/12/jensen-huang-ousted-timeline-of-the-nvidia-scandal/"
+        },
+        {
+          "summary": "The Information reports the relationship helped at least $7.5 billion of chips reach Chinese firms",
+          "log_odds": 0.266,
+          "source": "https://www.bnnbloomberg.ca/business/artificial-intelligence/2026/11/12/how-nvidias-jensen-huang-got-entangled-in-a-china-chip-and-spy-scandal/"
+        },
+        {
+          "summary": "Trump praises Huang's record after the resignation",
+          "log_odds": -0.18,
+          "source": "https://www.newsweek.com/trump-tim-cook-replace-jensen-huang-nvidia-ceo-12706299"
+        }
+      ]
+    },
+    "resolved": null
+  }
+]

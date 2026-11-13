@@ -1,0 +1,155 @@
+[
+  {
+    "id": "next_ceo",
+    "question": "Who is Nvidia's next permanent chief executive, if one is named by 31 December 2027?",
+    "logged_on": "2026-11-12",
+    "resolve_by": "2027-12-31",
+    "engine_version": "0.2",
+    "settings": "scale 1, redundancy 0.7, half-life x1",
+    "priors": {
+      "kress": 0.3,
+      "other_internal": 0.27,
+      "external_chip": 0.2,
+      "external_other": 0.2,
+      "huang_returns": 0.03
+    },
+    "forecast": {
+      "kress": 0.2076,
+      "other_internal": 0.2712,
+      "external_chip": 0.2578,
+      "external_other": 0.2505,
+      "huang_returns": 0.0129
+    },
+    "range": {
+      "kress": [
+        0.156,
+        0.2429
+      ],
+      "other_internal": [
+        0.2589,
+        0.2743
+      ],
+      "external_chip": [
+        0.2347,
+        0.2956
+      ],
+      "external_other": [
+        0.2308,
+        0.2813
+      ],
+      "huang_returns": [
+        0.0076,
+        0.0177
+      ]
+    },
+    "resolved": null
+  },
+  {
+    "id": "named_by_june",
+    "question": "Nvidia names a permanent chief executive by 30 June 2027",
+    "logged_on": "2026-11-12",
+    "resolve_by": "2027-06-30",
+    "engine_version": "0.2",
+    "settings": "scale 1, redundancy 0.7, half-life x1",
+    "priors": {
+      "named_by_june": 0.6,
+      "no": 0.4
+    },
+    "forecast": {
+      "named_by_june": 0.6119,
+      "no": 0.3881
+    },
+    "range": {
+      "named_by_june": [
+        0.6075,
+        0.6187
+      ],
+      "no": [
+        0.3813,
+        0.3925
+      ]
+    },
+    "resolved": null
+  },
+  {
+    "id": "testifies",
+    "question": "Jensen Huang appears before House committees, in open or closed session, by 26 November 2026",
+    "logged_on": "2026-11-12",
+    "resolve_by": "2026-11-26",
+    "engine_version": "0.2",
+    "settings": "scale 1, redundancy 0.7, half-life x1",
+    "priors": {
+      "testifies": 0.55,
+      "no": 0.45
+    },
+    "forecast": {
+      "testifies": 0.5457,
+      "no": 0.4543
+    },
+    "range": {
+      "testifies": [
+        0.5392,
+        0.5491
+      ],
+      "no": [
+        0.4509,
+        0.4608
+      ]
+    },
+    "resolved": null
+  },
+  {
+    "id": "role_2027",
+    "question": "Jensen Huang holds a formal Nvidia role (employee, director or named adviser) on 31 December 2027",
+    "logged_on": "2026-11-12",
+    "resolve_by": "2027-12-31",
+    "engine_version": "0.2",
+    "settings": "scale 1, redundancy 0.7, half-life x1",
+    "priors": {
+      "role_2027": 0.08,
+      "no": 0.92
+    },
+    "forecast": {
+      "role_2027": 0.0588,
+      "no": 0.9412
+    },
+    "range": {
+      "role_2027": [
+        0.0503,
+        0.0653
+      ],
+      "no": [
+        0.9347,
+        0.9497
+      ]
+    },
+    "resolved": null
+  },
+  {
+    "id": "charged",
+    "question": "Jensen Huang is criminally charged in the United States by 31 December 2027",
+    "logged_on": "2026-11-12",
+    "resolve_by": "2027-12-31",
+    "engine_version": "0.2",
+    "settings": "scale 1, redundancy 0.7, half-life x1",
+    "priors": {
+      "charged": 0.03,
+      "no": 0.97
+    },
+    "forecast": {
+      "charged": 0.0367,
+      "no": 0.9633
+    },
+    "range": {
+      "charged": [
+        0.034,
+        0.0413
+      ],
+      "no": [
+        0.9587,
+        0.966
+      ]
+    },
+    "resolved": null
+  }
+]

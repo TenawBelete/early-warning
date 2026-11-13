@@ -1,0 +1,164 @@
+{
+ "name": "Nvidia chief executive, 2026",
+ "focus_entity": "huang",
+ "catalog": "corporate_catalog.json",
+ "graph": {
+  "edges": [
+   [
+    "huang",
+    "nvidia_board",
+    0.95
+   ],
+   [
+    "huang",
+    "nvidia_company",
+    0.95
+   ],
+   [
+    "huang",
+    "counterpart_firm",
+    0.9
+   ],
+   [
+    "huang",
+    "us_president",
+    0.8
+   ],
+   [
+    "huang",
+    "us_agencies",
+    0.8
+   ],
+   [
+    "huang",
+    "us_congress",
+    0.75
+   ],
+   [
+    "nvidia_company",
+    "investors",
+    0.8
+   ],
+   [
+    "nvidia_company",
+    "analysts",
+    0.7
+   ],
+   [
+    "nvidia_board",
+    "candidates",
+    0.9
+   ],
+   [
+    "counterpart_firm",
+    "us_agencies",
+    0.8
+   ]
+  ],
+  "max_hops": 4
+ },
+ "questions": [
+  {
+   "id": "exit",
+   "kind": "backtest",
+   "text": "Jensen Huang ceases to be Nvidia's chief executive within 30 days",
+   "priors": {
+    "exit": 0.005,
+    "stay": 0.995
+   },
+   "prior_rationale": "Judgment value. Large-company chief executives turn over at roughly one in ten per year and founders less often; about 6 percent a year is about 0.5 percent per 30 days. Not measured in this project.",
+   "horizon_days": 30,
+   "labels": {
+    "exit": "Leaves the role",
+    "stay": "Stays"
+   },
+   "outcome": {
+    "hypothesis": "exit",
+    "date": "2026-11-12"
+   },
+   "as_of_dates": [
+    "2026-06-30",
+    "2026-09-30",
+    "2026-10-28",
+    "2026-11-06",
+    "2026-11-08",
+    "2026-11-10",
+    "2026-11-11"
+   ],
+   "date_labels": {
+    "2026-10-28": "day before the first report of the relationship",
+    "2026-11-06": "day before the affair itself was reported"
+   }
+  },
+  {
+   "id": "next_ceo",
+   "text": "Who is Nvidia's next permanent chief executive, if one is named by 31 December 2027?",
+   "resolve_by": "2027-12-31",
+   "priors": {
+    "kress": 0.3,
+    "other_internal": 0.27,
+    "external_chip": 0.2,
+    "external_other": 0.2,
+    "huang_returns": 0.03
+   },
+   "labels": {
+    "kress": "Colette Kress (interim made permanent)",
+    "other_internal": "Another Nvidia executive",
+    "external_chip": "Outside hire who runs or ran a chip company",
+    "external_other": "Outside hire from elsewhere",
+    "huang_returns": "Jensen Huang returns"
+   },
+   "prior_rationale": "Judgment values: interim chiefs are confirmed in a minority of cases, and boards split roughly evenly between insiders and outsiders after a forced exit. Not measured in this project.",
+   "kind": "live",
+   "logged_on": "2026-11-12"
+  },
+  {
+   "id": "named_by_june",
+   "text": "Nvidia names a permanent chief executive by 30 June 2027",
+   "resolve_by": "2027-06-30",
+   "priors": {
+    "named_by_june": 0.6,
+    "no": 0.4
+   },
+   "prior_rationale": "Judgment value: searches after an abrupt exit usually take several months.",
+   "kind": "live",
+   "logged_on": "2026-11-12"
+  },
+  {
+   "id": "testifies",
+   "text": "Jensen Huang appears before House committees, in open or closed session, by 26 November 2026",
+   "resolve_by": "2026-11-26",
+   "priors": {
+    "testifies": 0.55,
+    "no": 0.45
+   },
+   "prior_rationale": "Judgment value: agreed voluntary appearances often slip past the first target date.",
+   "kind": "live",
+   "logged_on": "2026-11-12"
+  },
+  {
+   "id": "role_2027",
+   "text": "Jensen Huang holds a formal Nvidia role (employee, director or named adviser) on 31 December 2027",
+   "resolve_by": "2027-12-31",
+   "priors": {
+    "role_2027": 0.08,
+    "no": 0.92
+   },
+   "prior_rationale": "Judgment value: leaders who resign during an investigation rarely hold a formal role again within about a year.",
+   "kind": "live",
+   "logged_on": "2026-11-12"
+  },
+  {
+   "id": "charged",
+   "text": "Jensen Huang is criminally charged in the United States by 31 December 2027",
+   "resolve_by": "2027-12-31",
+   "priors": {
+    "charged": 0.03,
+    "no": 0.97
+   },
+   "prior_rationale": "Judgment value: executives in corporate scandals are seldom charged, and rarely within about a year. A legal-exposure question, not an allegation.",
+   "kind": "live",
+   "logged_on": "2026-11-12"
+  }
+ ]
+}
