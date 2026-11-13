@@ -50,6 +50,10 @@ class Setup(unittest.TestCase):
         self.assertEqual(live.detect_template("Will Jane Doe be indicted?"), "legal_action")
         self.assertEqual(live.detect_template("Will it rain frogs?"), "custom")
 
+    def test_opposite_phrasing(self):
+        self.assertTrue(live.asks_opposite("Will Jane Doe stay as CEO of Acme?", "leader_exit"))
+        self.assertFalse(live.asks_opposite("Will Jane Doe resign as CEO of Acme?", "leader_exit"))
+
     def test_focus_guess_and_base_rate(self):
         self.assertEqual(live.guess_focus("Will Jane Doe resign as CEO?"), "Jane Doe")
         self.assertAlmostEqual(live.base_rate("leader_exit", 30), 0.01)

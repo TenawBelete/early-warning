@@ -375,3 +375,8 @@ def forecast(question, focus, tagged, kinds, counts, as_of, prior_yes):
             v = answer(c, "q", as_of, st)[0]["yes"]
             lo, hi = min(lo, v), max(hi, v)
     return probs["yes"], lo, hi, detail["yes"], info
+
+
+def asks_opposite(question: str, template: str) -> bool:
+    """True when the question asks whether the status quo holds ('Will X stay...') rather than whether the event happens."""
+    return template != "custom" and bool(re.search(r"\b(stays?|remains?|still be|survives?|keeps? (his|her|the|their) (job|post|role)|continues? as|hold on)\b", question, re.I))

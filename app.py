@@ -55,7 +55,9 @@ def fetch_news(focus: str, related: tuple, as_of: date, weeks: int):
 
 def ask_page():
     st.title("Ask anything")
-    st.caption("Type a question about a person, company or country. The app reads dated public news headlines "
+    st.caption("Ask whether an event will HAPPEN (leave, strike, sign, be charged), not whether things will stay the same. "
+               "The app does not check facts: make sure the person still holds the role you ask about. "
+               "Type a question about a person, company or country. The app reads dated public news headlines "
                "and runs them through the same engine as the worked examples. Experimental: read the Limits tab.")
     question = st.text_input("Your question", placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?")
     c1, c2 = st.columns(2)
@@ -111,9 +113,14 @@ def ask_page():
     st.subheader(r["question"])
     st.caption(f"Focus: {r['focus']}. Window: {r['horizon']} days from {r['as_of']:%d %B %Y}. "
                f"News source: {', '.join(r['used'])}.")
+    event = live.TEMPLATES[r["template"]]["name"] if r["template"] != "custom" else "What your YES clue words describe"
+    st.markdown(f"**The number below is the chance of this event within {r['horizon']} days: {event.lower()}.**")
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Probability of yes", pct(p_yes))
+    m1.metric("Chance the event happens", pct(p_yes))
     m1.caption(f"Range {pct(lo_yes)} to {pct(hi_yes)}")
+    if live.asks_opposite(r["question"], r["template"]):
+        st.info(f"Your question asks whether things stay as they are. That is the opposite of the event, "
+                f"so the answer to your question is about {pct(1 - p_yes)}.")
     m2.metric("Starting value", pct(r["prior"]))
     m3.metric("Headlines read", info["read"])
     m4.metric("Unusual signals", info["signals"])
@@ -161,7 +168,7 @@ def ask_page():
                        "(about 0 is normal, 3 or more is unusual and counts as a weak signal).")
     with t_time:
         days = [r["as_of"] - timedelta(days=i) for i in range(min(42, 7 * r["weeks"] - 21) - 1, -1, -2)]
-        st.line_chart(pd.DataFrame({"Date": days, "Probability of yes": [live.forecast(r["question"], r["focus"], tagged, kinds, [], d, r["prior"])[0] for d in days]}).set_index("Date"),
+        st.line_chart(pd.DataFrame({"Date": days, "Chance the event happens": [live.forecast(r["question"], r["focus"], tagged, kinds, [], d, r["prior"])[0] for d in days]}).set_index("Date"),
                       y_label="Probability")
         st.caption("Each point uses only headlines published by that day.")
     with t_all:

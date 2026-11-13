@@ -41,7 +41,7 @@ class App(unittest.TestCase):
         shown = {m.label: m.value for m in at.metric}
         self.assertEqual(shown["Headlines read"], "58")
         self.assertEqual(shown["Unusual signals"], "1")
-        self.assertNotEqual(shown["Probability of yes"], shown["Starting value"])
+        self.assertNotEqual(shown["Chance the event happens"], shown["Starting value"])
 
     def test_ask_anything_reports_fetch_failure(self):
         from unittest import mock
