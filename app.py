@@ -56,9 +56,16 @@ try:
 except Exception:
     SITE = {}
 NAME = SITE.get("product_name") or "Early Warning"
-st.sidebar.markdown(style.brand(NAME, SITE.get("tagline") or "Public-evidence forecasting"), unsafe_allow_html=True)
 PAGES = ["Home", "Analyse", "Worked examples", "Scorecard", "Method", "Contact"]
-page = st.sidebar.radio("Go to", PAGES, key="page")
+with st.container(key="topnav"):
+    nav_l, nav_r = st.columns([2, 4], vertical_alignment="center")
+    nav_l.markdown(style.brand(NAME, SITE.get("tagline") or "Public-evidence forecasting"), unsafe_allow_html=True)
+    page = nav_r.radio("Go to", PAGES, key="page", horizontal=True, label_visibility="collapsed")
+
+
+def site_footer():
+    contact = [SITE.get("organisation", ""), SITE.get("contact_email", ""), SITE.get("contact_phone", "")]
+    st.markdown(style.footer(NAME, [" | ".join(x for x in contact if x)]), unsafe_allow_html=True)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -557,22 +564,28 @@ LIMITS = ["It reads public headlines only. Private knowledge is invisible to it.
 
 
 def home_page():
-    st.title("What does the public record say will happen?")
-    st.markdown(f'<div class="ew-lede">{NAME} reads dated public news about a person, company or country, weighs each source, '
-                'and gives a sober estimate of what comes next, with the evidence shown and the uncertainty stated.</div>',
+    st.markdown(style.hero("See what the public record says is coming.",
+                           f"{NAME} reads dated public news about a person, company or country, weighs every source, and gives "
+                           "a sober estimate of what happens next, with the evidence shown and the uncertainty stated."),
                 unsafe_allow_html=True)
     c1, c2 = st.columns([5, 1], vertical_alignment="bottom")
-    c1.text_input("Ask a question", key="home_q", placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?")
+    c1.text_input("Ask a question about the future", key="home_q", placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?")
     c2.button("Analyse", type="primary", on_click=go_analyse, key="home_go", width="stretch")
     st.caption("Or start from one of these:")
     for col, q in zip(st.columns(len(EXAMPLES)), EXAMPLES):
         col.button(q, on_click=go_analyse, args=(q,), key=f"ex_{q}", width="stretch")
 
-    st.markdown('<div class="ew-example-tag">What an answer looks like (an illustration with invented names, not a live result):</div>',
-                unsafe_allow_html=True)
+    st.header("Built to be checked")
+    st.markdown(style.cards([
+        ("ask", "Ask in your own words", "Typos and loose phrasing are fine. The platform restates your question so you can see exactly what is being estimated."),
+        ("evidence", "Evidence you can open", "Every development behind a number is dated, linked and rated by the credibility of the outlets that reported it."),
+        ("score", "Scored, not assumed", "Save each forecast when you make it, then score it when the answer is known. Trust is earned on the Scorecard page.")]),
+        unsafe_allow_html=True)
+    st.header("What an answer looks like")
+    st.markdown('<div class="ew-example-tag">An illustration with invented names, not a live result.</div>', unsafe_allow_html=True)
     st.markdown(style.brief("Acme rehires Jane Doe as chief executive by 30 October 2027.", "Very unlikely", "about 4%", "2% to 8%",
                             0.04, 0.02, 0.08, "Underlying event: Acme rehires Jane Doe as chief executive."), unsafe_allow_html=True)
-    st.subheader("How it works")
+    st.header("How it works")
     st.markdown(style.steps(), unsafe_allow_html=True)
     st.markdown(style.two_lists(
         "What it does", ["Shows every development behind a number, with dates and links.",
@@ -582,7 +595,7 @@ def home_page():
                          "Lets you save forecasts and score them later."],
         "What it does not do", LIMITS), unsafe_allow_html=True)
     if SITE.get("video_url", "").startswith("http"):
-        st.subheader("A short walkthrough")
+        st.header("A short walkthrough")
         st.video(SITE["video_url"])
 
 
@@ -634,6 +647,8 @@ def contact_page():
         st.markdown(f"**{who}**")
     if "@" in SITE.get("contact_email", ""):
         st.markdown(f"Email: [{SITE['contact_email']}](mailto:{SITE['contact_email']})")
+    if SITE.get("contact_phone", "").strip():
+        st.markdown(f"Phone: {SITE['contact_phone']}")
     if SITE.get("contact_url", "").startswith("http"):
         st.markdown(f"{SITE.get('contact_url_label') or 'Website'}: [{SITE['contact_url']}]({SITE['contact_url']})")
     st.caption("The source code and the evidence files for the worked examples are public in the project repository.")
@@ -649,6 +664,7 @@ if page in ROUTES:
         st.error("Something went wrong while preparing this page. Please try again, or load a saved result under Advanced on the Analyse page.")
         with st.expander("Technical details"):
             st.code(repr(err))
+    site_footer()
     st.stop()
 
 keys = list_cases()

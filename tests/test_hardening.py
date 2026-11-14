@@ -87,7 +87,7 @@ class SaveLoad(unittest.TestCase):
 def open_app(page="Analyse"):
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
     assert not at.exception
-    return at.sidebar.radio[0].set_value(page).run()
+    return at.radio[0].set_value(page).run()
 
 
 @unittest.skipIf(AppTest is None, "streamlit not installed")
@@ -141,7 +141,7 @@ class Page(unittest.TestCase):
     def test_no_failed_engine_setting_is_offered(self):
         at = open_app("Worked examples")
         self.assertFalse(at.exception)
-        self.assertEqual(len(at.sidebar.radio), 1)
+        self.assertEqual(len(at.sidebar.radio), 0)
         self.assertNotIn("Fitted", (ROOT / "app.py").read_text().split("def scorecard_page")[1])
 
     def test_scorecard_page_opens(self):
@@ -241,7 +241,7 @@ class Site(unittest.TestCase):
         with mock.patch.object(live, "collect", return_value=([], [0] * 10, ["Google News"])):
             next(b for b in at.button if b.label.startswith("Will Nvidia name")).click().run()
         self.assertFalse(at.exception)
-        self.assertEqual(at.sidebar.radio[0].value, "Analyse")
+        self.assertEqual(at.radio[0].value, "Analyse")
         self.assertEqual(at.text_input[0].value, "Will Nvidia name a permanent CEO within 365 days?")
         self.assertTrue(at.metric)   # it ran without a second click
 

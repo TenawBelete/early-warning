@@ -15,7 +15,7 @@ except Exception:  # streamlit not installed: skip, the engine tests still run
 def open_app(page="Analyse"):
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
     assert not at.exception
-    return at.sidebar.radio[0].set_value(page).run()
+    return at.radio[0].set_value(page).run()
 
 
 @unittest.skipIf(AppTest is None, "streamlit not installed")
@@ -23,7 +23,7 @@ class App(unittest.TestCase):
     def test_every_case_and_question_renders(self):
         at = open_app()
         self.assertFalse(at.exception)
-        at.sidebar.radio[0].set_value("Worked examples").run()
+        at.radio[0].set_value("Worked examples").run()
         self.assertFalse(at.exception)
         for case in at.sidebar.selectbox[0].options:
             at.sidebar.selectbox[0].select(case).run()
