@@ -52,6 +52,12 @@ Source credibility (`ew/sources.py`, `configs/sources.json`): every outlet is ra
 or unknown from an editable list; satire is dropped; claims confirmed by several good outlets count
 for more, and claims carried only by low or unknown outlets can never be more than weak signals.
 
+Hardening (v1.1): questions and headlines are passed to the model as fenced, sanitised data and
+instruction-like questions are refused; displayed numbers are rounded; ranges include a starting
+value half or twice as likely; a second reading can be run to check stability; full results can be
+saved and replayed offline; the Scorecard page scores saved forecasts. The engine setting that
+failed its out-of-sample check is no longer offered.
+
 This mode is experimental. Keyword rules misread headlines, the starting value is a judgment,
 and nothing in it has been scored against outcomes. The live fetch could not be tested from the
 build environment (no access to news sites there); it is tested against recorded sample data.

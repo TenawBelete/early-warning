@@ -1,5 +1,8 @@
+import os
 import unittest
 from pathlib import Path
+
+os.environ["EW_DEBUG"] = "1"  # let errors surface in tests
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -91,7 +94,7 @@ class App(unittest.TestCase):
                 self.assertEqual(shown["Chance the event happens"], "n/a")
                 self.assertTrue(at.error)
             else:
-                self.assertNotIn(shown["Chance the event happens"], ("n/a", "2.0%"))
+                self.assertNotIn(shown["Chance the event happens"], ("n/a", "about 2%"))
                 self.assertFalse(at.error)
 
     def test_unsupported_question_gets_a_suggestion(self):
@@ -132,7 +135,7 @@ class App(unittest.TestCase):
                 at.text_input[0].set_value("will the party win the next election").run()
                 next(b for b in at.button if b.label == "Analyse").click().run()
             self.assertFalse(at.exception)
-            out[days] = float({m.label: m.value for m in at.metric}["Chance the event happens"].rstrip("%"))
+            out[days] = float({m.label: m.value for m in at.metric}["Chance the event happens"].replace("about ", "").rstrip("%"))
             self.assertTrue(any(f"{today + timedelta(days=days):%d %B %Y}" in m.value for m in at.markdown))
         self.assertLess(out[30], out[725])          # the same bad news moves a two-year question much less
         self.assertGreater(out[725], 30)
@@ -161,7 +164,7 @@ class App(unittest.TestCase):
             next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
         self.assertFalse(at.error)
-        self.assertTrue(any("most likely answer is Ann Lee" in m.value for m in at.markdown))
+        self.assertTrue(any("Most likely: Ann Lee" in m.value for m in at.markdown))
 
     def test_who_question_without_ai_explains(self):
         import streamlit as st

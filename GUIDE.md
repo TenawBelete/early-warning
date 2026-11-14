@@ -133,3 +133,23 @@ Rules:
 - The free tier has daily limits. If they are reached the app says so and falls back to keyword rules.
 - On the free tier Google may use what is sent (your question and the headlines) to improve its products.
 - Button names on Google's and Streamlit's sites may differ slightly from the ones above.
+
+
+## Before a live demo
+
+A live demo depends on three things that can fail: the app waking up, the news search, and the free AI service.
+
+1. An hour before, open the site so it is awake, and ask the questions you plan to show.
+2. Under each answer click **Save this full result**. Keep the files on the laptop you will present from.
+3. If anything fails on stage, open **Advanced**, use **Show a saved result**, and pick the file. It shows the same answer
+   with no internet or AI call.
+4. Under the Why tab, **Check stability** reads the headlines a second time and tells you whether the two readings agree.
+
+## Building a track record
+
+Nothing here has been scored yet, and that is the first thing a careful audience will ask about.
+
+1. Each time you ask a yes/no question, click **Download this forecast** and keep the file. Never edit it.
+2. When the deadline passes, open the **Scorecard** page, load the files, and mark what happened.
+3. The page shows the Brier score against two baselines (the starting values alone, and always saying 50%).
+   Thirty or more settled forecasts are needed before the numbers mean anything.
