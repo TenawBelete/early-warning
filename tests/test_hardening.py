@@ -84,6 +84,12 @@ class SaveLoad(unittest.TestCase):
         self.assertEqual(back["reading"]["developments"][0]["date"], AS_OF)
 
 
+def open_app(page="Analyse"):
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+    assert not at.exception
+    return at.sidebar.radio[0].set_value(page).run()
+
+
 @unittest.skipIf(AppTest is None, "streamlit not installed")
 class Page(unittest.TestCase):
     def run_app(self, devs, prior=0.02):
@@ -98,7 +104,7 @@ class Page(unittest.TestCase):
         with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k"}), \
              mock.patch.object(live, "collect", return_value=(heads, [4] * 10, ["Google News"])), \
              mock.patch.object(ai, "plan", return_value=plan), mock.patch.object(ai, "read", return_value=reading):
-            at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+            at = open_app()
             at.text_input[0].set_value("will jane doe be hired again").run()
             next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
@@ -109,7 +115,7 @@ class Page(unittest.TestCase):
         import re
         text = re.sub(r"<[^>]+>", " ", " ".join(m.value for m in at.markdown))
         text = re.sub(r"\s+", " ", text)
-        self.assertRegex(text, r"(Very unlikely|Unlikely) about \d+% Range (under 1|\d+)% to \d+%")
+        self.assertRegex(text, r"(Very unlikely|Unlikely) about \d+% range (under 1|\d+)% to \d+%")
         self.assertIn("A model estimate from public news reporting, not a statement of fact", text)
         self.assertNotRegex(text, r"about \d+\.\d%")   # no decimals in the headline
 
@@ -117,26 +123,29 @@ class Page(unittest.TestCase):
         at, _ = self.run_app([], prior=0.2)
         cap = next(c.value for c in at.caption if c.value.startswith("Range "))
         self.assertEqual(cap, "Range 10% to 35%")
-        self.assertTrue(any('Range 10% to 35%</div>' in m.value for m in at.markdown))
+        self.assertTrue(any('range 10% to 35%</div>' in m.value for m in at.markdown))
 
     def test_dynamic_text_is_escaped_in_html(self):
         from ew import style
-        html = style.hero_yes_no("Unlikely", "10%", "5% to 20%", 0.1, 0.05, 0.2, '<script>alert(1)</script>', "1 January 2027")
+        html = style.brief('<script>alert(1)</script>', "Unlikely", "about 10%", "5% to 20%", 0.1, 0.05, 0.2, "<i>how</i>")
         self.assertNotIn("<script>", html)
         self.assertIn("&lt;script&gt;", html)
         self.assertNotIn("<img", style.note("x", '<img src=x onerror=1>'))
-        self.assertNotIn("<b>evil", style.hero_who([("<b>evil</b>", "40%", 0.4, 0.2, 0.6, False)]))   # 20% with odds halved and doubled, no news at all
+        self.assertNotIn("<b>evil", style.brief_who("<b>evil</b>?", [("<b>evil</b>", "40%", 0.4, 0.2, 0.6, False)]))
+        led = style.ledger([{"date": "2026-11-01", "text": "<b>evil</b>", "effect": "up", "effect_label": "Raises", "strength": "weak",
+                             "sources": "High (2 outlets)", "url": "javascript:alert(1)"}])
+        self.assertNotIn("<b>evil", led)
+        self.assertNotIn("javascript:", led)
+        self.assertEqual(style.safe_url('https://x.org/a"onclick="1'), "https://x.org/a&quot;onclick=&quot;1")   # 20% with odds halved and doubled, no news at all
 
     def test_no_failed_engine_setting_is_offered(self):
-        at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
-        at.sidebar.radio[0].set_value("Worked examples (Iran, Nvidia)").run()
+        at = open_app("Worked examples")
         self.assertFalse(at.exception)
         self.assertEqual(len(at.sidebar.radio), 1)
         self.assertNotIn("Fitted", (ROOT / "app.py").read_text().split("def scorecard_page")[1])
 
     def test_scorecard_page_opens(self):
-        at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
-        at.sidebar.radio[0].set_value("Scorecard (track record)").run()
+        at = open_app("Scorecard")
         self.assertFalse(at.exception)
         self.assertTrue(any("No yes/no forecasts loaded" in i.value for i in at.info))
 
@@ -144,11 +153,109 @@ class Page(unittest.TestCase):
         import streamlit as st
         st.cache_data.clear()
         with mock.patch.dict(os.environ, {"EW_DEBUG": ""}), mock.patch.object(live, "auto_plan", side_effect=ValueError("boom")):
-            at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+            at = open_app()
             at.text_input[0].set_value("Will Jane Doe resign as CEO of Acme?").run()
             next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
         self.assertTrue(any("Something went wrong" in e.value for e in at.error))
+
+
+
+class Polarity(unittest.TestCase):
+    """The answer shown must be the answer to the question the user asked."""
+
+    def test_negative_question_is_reframed_as_an_affirmative_event(self):
+        ai._model_cache.clear()
+        p = ai.plan("k", "Will Tim Cook not be CEO of Nvidia in the future?", AS_OF, http=fake(
+            {"kind": "yes_no", "focus": "Tim Cook", "event": "Tim Cook becomes chief executive of Nvidia", "question_true_if_event": False,
+             "statement": "Tim Cook is not chief executive of Nvidia on 10 December 2026", "base_rate_percent": 0.5}))
+        self.assertTrue(p["asks_opposite"])
+        self.assertEqual(p["statement"], "Tim Cook is not chief executive of Nvidia on 10 December 2026")
+
+    def test_negated_event_is_retried_then_refused(self):
+        ai._model_cache.clear()
+        calls = []
+
+        def http(url, key, body=None, timeout=60):
+            if body is None:
+                from test_ai import MODELS
+                return MODELS
+            calls.append(body["contents"][0]["parts"][0]["text"])
+            ev = "Tim Cook does not become chief executive" if len(calls) == 1 else "Tim Cook becomes chief executive of Nvidia"
+            return {"candidates": [{"content": {"parts": [{"text": json.dumps({"focus": "Tim Cook", "event": ev, "question_true_if_event": False})}]}}]}
+        p = ai.plan("k", "q", AS_OF, http=http)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("broke a rule", calls[1])
+        self.assertEqual(p["event"], "Tim Cook becomes chief executive of Nvidia")
+        ai._model_cache.clear()
+        with self.assertRaises(ai.AIError):
+            ai.plan("k", "q", AS_OF, http=fake({"focus": "X", "event": "X remains chief executive"}))
+
+    def test_wording_never_says_about_under(self):
+        from ew.present import approx, range_text
+        self.assertEqual([approx(x) for x in (0.003, 0.35, 0.998)], ["under 1%", "about 35%", "over 99%"])
+        self.assertEqual(range_text(0.002, 0.004), "under 1%")
+        self.assertEqual(range_text(0.2, 0.1), "10% to 20%")
+
+
+@unittest.skipIf(AppTest is None, "streamlit not installed")
+class Site(unittest.TestCase):
+    def test_every_page_opens(self):
+        for page in ("Home", "Analyse", "Worked examples", "Scorecard", "Method", "Contact"):
+            at = open_app(page)
+            self.assertFalse(at.exception, page)
+
+    def test_negative_question_shows_the_answer_to_the_question(self):
+        import streamlit as st
+        st.cache_data.clear()
+        today = date.today()
+        heads = [live.Headline(f"Tim Cook story {i}", "Reuters", "https://example.org/a", today - timedelta(days=i), "focus") for i in range(40)]
+        plan = {"focus": "Tim Cook", "related": ["Nvidia"], "event": "Tim Cook becomes chief executive of Nvidia", "asks_opposite": True,
+                "statement": "Tim Cook is not chief executive of Nvidia on 14 December 2026", "template": "custom", "horizon_days": 30,
+                "deadline": str(today + timedelta(days=30)), "prior": 0.004, "prior_reason": "No link to Nvidia.", "by": "ai",
+                "kind": "yes_no", "restated": "Will Tim Cook not be the CEO of Nvidia by 14 December 2026?"}
+        devs = [{"date": today, "summary": "A politician suggests Cook for the job", "direction": "up", "strength": "weak", "ids": [0]}]
+        reading = ({"premise_ok": True, "premise_note": "", "already_happened": False, "summary": "S.", "developments": devs}, heads)
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k"}), \
+             mock.patch.object(live, "collect", return_value=(heads, [4] * 10, ["Google News"])), \
+             mock.patch.object(ai, "plan", return_value=plan), mock.patch.object(ai, "read", return_value=reading):
+            at = open_app()
+            at.text_input[0].set_value("Will Tim Cook not be CEO of Nvidea in the future?").run()
+            next(b for b in at.button if b.label == "Analyse").click().run()
+        self.assertFalse(at.exception)
+        import re as _re
+        text = _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", " ", " ".join(m.value for m in at.markdown)))
+        self.assertIn("Tim Cook is not chief executive of Nvidia on 14 December 2026.", text)
+        self.assertIn("Very likely over 99%", text)                       # the answer to the question as asked
+        self.assertIn("opposite of the underlying event", text)
+        self.assertNotIn("about under", text)
+        self.assertNotIn("about over", text)
+        self.assertNotIn("under 1% to under 1%", text)
+        self.assertEqual({m.label: m.value for m in at.metric}["Answer"], "over 99%")
+        self.assertIn("Lowers the estimate", text)                        # support for the event lowers a "will not" answer
+
+    def test_home_example_runs_the_analysis(self):
+        import streamlit as st
+        st.cache_data.clear()
+        at = open_app("Home")
+        with mock.patch.object(live, "collect", return_value=([], [0] * 10, ["Google News"])):
+            next(b for b in at.button if b.label.startswith("Will Nvidia name")).click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.sidebar.radio[0].value, "Analyse")
+        self.assertEqual(at.text_input[0].value, "Will Nvidia name a permanent CEO within 365 days?")
+        self.assertTrue(at.metric)   # it ran without a second click
+
+    def test_system_check_reports_failures_without_crashing(self):
+        from ew import selftest
+
+        def plan(key, q, today):
+            if "Bitcoin" in q:
+                raise ai.AIError("quota")
+            return ai.plan(key, q, today, http=fake({"kind": "unsupported", "unsupported_reason": "x"}))
+        ai._model_cache.clear()
+        rows = selftest.run("k", AS_OF, plan=plan)
+        self.assertEqual(len(rows), len(selftest.CASES))
+        self.assertEqual(sum(r["Result"] == "Pass" for r in rows), 4)     # the four other 'unsupported' cases pass, Bitcoin errors
 
 
 if __name__ == "__main__":

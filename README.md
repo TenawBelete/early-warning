@@ -1,4 +1,4 @@
-# Early-warning investigation platform, version 0.2
+# Early Warning: public-evidence forecasting (site v2.0, engine 0.2)
 
 Pick a focal person or body and a question. The engine starts from a base rate and updates it
 with dated public evidence, using only what was public on the date you choose. A web app shows
@@ -57,6 +57,11 @@ instruction-like questions are refused; displayed numbers are rounded; ranges in
 value half or twice as likely; a second reading can be run to check stability; full results can be
 saved and replayed offline; the Scorecard page scores saved forecasts. The engine setting that
 failed its out-of-sample check is no longer offered.
+
+Site v2.0: Home, Analyse, Worked examples, Scorecard, Method and Contact pages. Results answer the
+question as asked (negative and "still" questions are worked out as the opposite of an affirmative
+underlying event). The Method page has a system check that runs 13 difficult questions through the
+live AI model. Site name and contact details live in `configs/site.json`.
 
 This mode is experimental. Keyword rules misread headlines, the starting value is a judgment,
 and nothing in it has been scored against outcomes. The live fetch could not be tested from the

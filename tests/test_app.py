@@ -12,12 +12,18 @@ except Exception:  # streamlit not installed: skip, the engine tests still run
     AppTest = None
 
 
+def open_app(page="Analyse"):
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+    assert not at.exception
+    return at.sidebar.radio[0].set_value(page).run()
+
+
 @unittest.skipIf(AppTest is None, "streamlit not installed")
 class App(unittest.TestCase):
     def test_every_case_and_question_renders(self):
-        at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+        at = open_app()
         self.assertFalse(at.exception)
-        at.sidebar.radio[0].set_value("Worked examples (Iran, Nvidia)").run()
+        at.sidebar.radio[0].set_value("Worked examples").run()
         self.assertFalse(at.exception)
         for case in at.sidebar.selectbox[0].options:
             at.sidebar.selectbox[0].select(case).run()
@@ -37,7 +43,7 @@ class App(unittest.TestCase):
         import streamlit as st
         st.cache_data.clear()
         with mock.patch.object(live, "collect", return_value=(heads, [3, 4, 2, 3, 5, 3, 4, 3, 2, 4], ["Google News"])):
-            at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+            at = open_app()
             at.text_input[0].set_value("Will Jane Doe resign as CEO of Acme?").run()
             self.assertFalse(at.exception)
             next(b for b in at.button if b.label == "Analyse").click().run()
@@ -46,7 +52,7 @@ class App(unittest.TestCase):
         shown = {m.label: m.value for m in at.metric}
         self.assertEqual(shown["Headlines read"], "58")
         self.assertEqual(shown["Unusual signals"], "1")
-        self.assertNotEqual(shown["Chance the event happens"], shown["Starting value"])
+        self.assertNotEqual(shown["Answer"], shown["Starting value"])
 
     def test_ask_anything_reports_fetch_failure(self):
         from unittest import mock
@@ -54,7 +60,7 @@ class App(unittest.TestCase):
         from ew import live
         st.cache_data.clear()  # the other test may have cached a successful fetch
         with mock.patch.object(live, "collect", side_effect=RuntimeError("offline")):
-            at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+            at = open_app()
             at.text_input[0].set_value("Will Jane Doe resign as CEO of Acme?").run()
             next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
@@ -83,7 +89,7 @@ class App(unittest.TestCase):
             with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k"}), \
                  mock.patch.object(live, "collect", return_value=(heads, [3] * 10, ["Google News"])), \
                  mock.patch.object(ai, "plan", return_value=plan), mock.patch.object(ai, "read", return_value=reading(stale)):
-                at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+                at = open_app()
                 at.text_input[0].set_value("will jane doe stay ceo of acme").run()
                 next(b for b in at.button if b.label == "Analyse").click().run()
             self.assertFalse(at.exception)
@@ -91,10 +97,10 @@ class App(unittest.TestCase):
             self.assertEqual(shown["Developments that counted"], "1")
             self.assertTrue(any("You typed" in c.value and "will jane doe stay ceo of acme" in c.value for c in at.caption))
             if stale:
-                self.assertEqual(shown["Chance the event happens"], "n/a")
+                self.assertEqual(shown["Answer"], "n/a")
                 self.assertTrue(at.error)
             else:
-                self.assertNotIn(shown["Chance the event happens"], ("n/a", "about 2%"))
+                self.assertNotIn(shown["Answer"], ("n/a", "about 2%"))
                 self.assertFalse(at.error)
 
     def test_unsupported_question_gets_a_suggestion(self):
@@ -106,7 +112,7 @@ class App(unittest.TestCase):
         plan = {"kind": "unsupported", "by": "ai", "reason": "It asks for a price.", "suggestion": "Will Acme shares close above 100 by 31 December?"}
         with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k"}), mock.patch.object(ai, "plan", return_value=plan), \
              mock.patch.object(live, "collect", side_effect=AssertionError("must not fetch")):
-            at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+            at = open_app()
             at.text_input[0].set_value("what will the acme share price be").run()
             next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
@@ -131,11 +137,11 @@ class App(unittest.TestCase):
             with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k"}), \
                  mock.patch.object(live, "collect", return_value=(heads, [4] * 10, ["Google News"])), \
                  mock.patch.object(ai, "plan", return_value=plan), mock.patch.object(ai, "read", return_value=reading):
-                at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+                at = open_app()
                 at.text_input[0].set_value("will the party win the next election").run()
                 next(b for b in at.button if b.label == "Analyse").click().run()
             self.assertFalse(at.exception)
-            out[days] = float({m.label: m.value for m in at.metric}["Chance the event happens"].replace("about ", "").rstrip("%"))
+            out[days] = float({m.label: m.value for m in at.metric}["Answer"].replace("about ", "").rstrip("%"))
             self.assertTrue(any(f"{today + timedelta(days=days):%d %B %Y}" in m.value for m in at.markdown))
         self.assertLess(out[30], out[725])          # the same bad news moves a two-year question much less
         self.assertGreater(out[725], 30)
@@ -159,7 +165,7 @@ class App(unittest.TestCase):
         with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k"}), \
              mock.patch.object(live, "collect", return_value=(heads, [3] * 10, ["Google News"])), \
              mock.patch.object(ai, "plan", return_value=plan), mock.patch.object(ai, "read_who", return_value=reading):
-            at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+            at = open_app()
             at.text_input[0].set_value("who will be the next acme ceo").run()
             next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
@@ -169,7 +175,7 @@ class App(unittest.TestCase):
     def test_who_question_without_ai_explains(self):
         import streamlit as st
         st.cache_data.clear()
-        at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+        at = open_app()
         at.text_input[0].set_value("who will be the next acme ceo").run()
         next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
@@ -184,7 +190,7 @@ class App(unittest.TestCase):
         with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k"}), \
              mock.patch.object(live, "collect", return_value=([], [0] * 10, ["Google News"])), \
              mock.patch.object(ai, "plan", side_effect=ai.AIError("quota")):
-            at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+            at = open_app()
             at.text_input[0].set_value("Will Jane Doe resign as CEO of Acme?").run()
             next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)

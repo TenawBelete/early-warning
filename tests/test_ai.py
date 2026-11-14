@@ -83,7 +83,7 @@ class Plan(unittest.TestCase):
         ai._model_cache.clear()
         p = ai.plan("k", "will jane doe stay ceo of acme", AS_OF, http=fake(
             {"kind": "yes_no", "focus": "Jane Doe", "related": ["Acme", "", "A", "B", "C"], "event": "Jane Doe stops being chief executive of Acme",
-             "asks_opposite": True, "template": "nonsense", "deadline": "2999-01-01", "base_rate_percent": 500, "base_rate_reason": "r"}))
+             "question_true_if_event": False, "template": "nonsense", "deadline": "2999-01-01", "base_rate_percent": 500, "base_rate_reason": "r"}))
         self.assertEqual(p["focus"], "Jane Doe")
         self.assertEqual(len(p["related"]), 3)
         self.assertEqual((p["template"], p["horizon_days"], p["prior"]), ("custom", 3650, 0.99))

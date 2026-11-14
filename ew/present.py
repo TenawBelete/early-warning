@@ -47,3 +47,14 @@ def unpack(text: str) -> dict:
         for dv in (r.get(key) or {}).get("developments", []):
             dv["date"] = date.fromisoformat(dv["date"])
     return r
+
+
+def approx(x: float) -> str:
+    """'about 35%', but never 'about under 1%'."""
+    t = show(x)
+    return t if t[0] in "uo" else "about " + t
+
+
+def range_text(lo: float, hi: float) -> str:
+    a, b = show(min(lo, hi)), show(max(lo, hi))
+    return a if a == b else f"{a} to {b}"

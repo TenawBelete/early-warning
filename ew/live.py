@@ -414,5 +414,5 @@ def auto_plan(question: str) -> dict:
         horizon = int(m.group(1)) * {"day": 1, "week": 7, "month": 30, "year": 365}[m.group(2)]
     horizon = min(365, max(1, horizon))
     return {"focus": focus, "related": [], "event": TEMPLATES[template]["name"], "asks_opposite": asks_opposite(question, template),
-            "template": template, "horizon_days": horizon, "deadline": "", "kind": "yes_no", "prior": base_rate(template, horizon),
+            "template": template, "horizon_days": horizon, "deadline": "", "kind": "yes_no", "statement": "", "prior": base_rate(template, horizon),
             "prior_reason": "Rough default for this type of event.", "by": "keywords"}

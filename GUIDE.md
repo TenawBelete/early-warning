@@ -153,3 +153,16 @@ Nothing here has been scored yet, and that is the first thing a careful audience
 2. When the deadline passes, open the **Scorecard** page, load the files, and mark what happened.
 3. The page shows the Brier score against two baselines (the starting values alone, and always saying 50%).
    Thirty or more settled forecasts are needed before the numbers mean anything.
+
+
+## Your name and contact details on the site
+
+Open `configs/site.json` and fill in `product_name`, `tagline`, `organisation`, `contact_name`, `contact_email`, and optionally
+`video_url` (a YouTube or video link shown on the Home page). Leave a value empty to hide it. Then push. Everything in this file is
+public, so only put details there that you want people to see.
+
+## The system check (do this after every update)
+
+Open the **Method** page and click **Run the system check**. It sends 13 difficult questions to the live AI model and checks that each
+is understood correctly: negative questions, "still" questions, typos, far-off elections, and questions it should refuse. If any row
+says FAIL, send a screenshot of the table. This is the test that cannot be run anywhere except on the live site.

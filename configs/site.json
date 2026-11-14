@@ -1,0 +1,11 @@
+{
+  "_note": "Site details shown on the Home and Contact pages. Edit these and push. Leave a value empty to hide it. Do not put anything here you would not want public: the repository is public.",
+  "product_name": "Early Warning",
+  "tagline": "Public-evidence forecasting",
+  "organisation": "",
+  "contact_name": "",
+  "contact_email": "",
+  "contact_url": "https://github.com/TenawBelete",
+  "contact_url_label": "GitHub",
+  "video_url": ""
+}

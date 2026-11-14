@@ -10,6 +10,8 @@ import os
 import re
 from datetime import date, timedelta
 
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
@@ -18,10 +20,11 @@ from ew.engine import V0
 from ew.evidence import visible_as_of
 from ew import ai, live
 from ew.sources import support, tier
-from ew.present import band, odds_shift, pack, show, unpack
+from ew.present import approx, band, odds_shift, pack, range_text, show, unpack
+from ew import selftest
 from ew import style
 
-st.set_page_config(page_title="Early Warning", layout="wide")
+st.set_page_config(page_title="Early Warning: public-evidence forecasting", layout="wide")
 st.markdown(style.CSS, unsafe_allow_html=True)
 
 WEAK = 0.3                          # if evidence shifts no answer by more than this (log-odds), flag it
@@ -48,8 +51,14 @@ def evidence_table(pairs) -> pd.DataFrame:
 LINK = {"Source": st.column_config.LinkColumn("Source", display_text="open")}
 
 # ---------------------------------------------------------------- sidebar
-st.sidebar.markdown(style.BRAND, unsafe_allow_html=True)
-page = st.sidebar.radio("Workspace", ["Ask anything (live news)", "Worked examples (Iran, Nvidia)", "Scorecard (track record)"])
+try:
+    SITE = json.loads((Path(__file__).parent / "configs" / "site.json").read_text())
+except Exception:
+    SITE = {}
+NAME = SITE.get("product_name") or "Early Warning"
+st.sidebar.markdown(style.brand(NAME, SITE.get("tagline") or "Public-evidence forecasting"), unsafe_allow_html=True)
+PAGES = ["Home", "Analyse", "Worked examples", "Scorecard", "Method", "Contact"]
+page = st.sidebar.radio("Go to", PAGES, key="page")
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -177,7 +186,6 @@ def render_who(r: dict):
     named = [h for h in order if h != ai.OTHER]
     top = named[0]
     st.divider()
-    st.subheader(r["question"])
     if r.get("asked") and r["asked"].strip().lower().rstrip("?") != r["question"].strip().lower().rstrip("?"):
         st.caption(f"You typed: “{r['asked']}”. Understood as the question above. If that is not what you meant, rephrase and run it again.")
     st.caption(f"Searched news for: {r['plan']['focus']}. Using news published by {as_of:%d %B %Y}. "
@@ -185,13 +193,14 @@ def render_who(r: dict):
     if reading["decided"]:
         st.error("The news suggests this has already been decided. " + reading["decided_note"])
     else:
-        st.markdown(style.hero_who([(h, show(probs[h]), probs[h], lo[h], hi[h], h == ai.OTHER) for h in order]), unsafe_allow_html=True)
-        st.caption(f"{top} ranges from {show(lo[top])} to {show(hi[top])}. The chance it is someone not on this list is about "
-                   f"{show(probs[ai.OTHER])}. Ranges cover nearby engine settings and a starting value half or twice as likely.")
+        st.markdown(style.brief_who(r["question"], [(h, approx(probs[h]), probs[h], lo[h], hi[h], h == ai.OTHER) for h in order]),
+                    unsafe_allow_html=True)
+        st.markdown(f"{top} ranges from {range_text(lo[top], hi[top])}. The chance it is someone not on this list is {approx(probs[ai.OTHER])}. "
+                    "Ranges cover nearby engine settings and a starting value half or twice as likely.")
     if reading["summary"]:
         st.markdown(style.note("What the news says.", reading["summary"]), unsafe_allow_html=True)
     pri = {c["name"]: c for c in reading["candidates"]}
-    st.dataframe(pd.DataFrame([{"Candidate": h, "Estimate": "about " + show(probs[h]), "Range": f"{show(lo[h])} to {show(hi[h])}",
+    st.dataframe(pd.DataFrame([{"Candidate": h, "Estimate": approx(probs[h]), "Range": range_text(lo[h], hi[h]),
                                 "Starting value": show(pri[h]["prior"]), "Why this starting value": pri[h]["reason"]} for h in order]),
                  hide_index=True, width="stretch")
     st.caption("Experimental. The candidates and starting values are suggested by an AI model from the headlines and general "
@@ -199,11 +208,10 @@ def render_who(r: dict):
     t_why, t_time, t_all, t_lim = st.tabs(["Why", "Over time", "All headlines", "Limits"])
     with t_why:
         if reading["developments"]:
-            st.dataframe(pd.DataFrame([{"Date": dv["date"], "Candidate": dv["candidate"], "Development": dv["summary"],
-                                        "Pushes their chance": "Up" if dv["direction"] == "up" else "Down", "Strength": dv["strength"],
-                                        "Sources": src_label([sent[i].source for i in dv["ids"]]),
-                                        "Source": sent[dv["ids"][0]].link} for dv in reading["developments"]]),
-                         hide_index=True, column_config=LINK, width="stretch")
+            st.markdown(style.ledger([{"date": dv["date"], "who": dv["candidate"], "text": dv["summary"], "effect": dv["direction"],
+                                       "effect_label": "Raises their chance" if dv["direction"] == "up" else "Lowers their chance",
+                                       "strength": dv["strength"], "sources": src_label([sent[i].source for i in dv["ids"]]),
+                                       "url": sent[dv["ids"][0]].link} for dv in reading["developments"]]), unsafe_allow_html=True)
             for dv in reading["developments"]:
                 with st.expander(f"Headlines behind: {dv['candidate']}: {dv['summary']}"):
                     for i in dv["ids"][:8]:
@@ -236,12 +244,12 @@ def render_who(r: dict):
 
 
 def ask_page():
-    st.markdown('<div class="ew-eyebrow">Live analysis</div>', unsafe_allow_html=True)
     st.title("Ask a question about the future")
     has_ai = bool(ai_key())
-    st.caption("Name a person, company or country and an event. The platform reads dated public news headlines, weighs each "
-               "source, and estimates the chance with its reasons. Experimental: see the Limits tab.")
-    question = st.text_input("Your question", placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?   or   Who will be the next CEO of Acme?")
+    st.markdown('<div class="ew-lede">Name a person, company or country and something that might happen. You get an estimate, '
+                'its range, and the dated public reporting behind it.</div>', unsafe_allow_html=True)
+    question = st.text_input("Your question", key="q",
+                             placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?   or   Who will be the next CEO of Acme?")
     with st.expander("Advanced (optional: everything here is filled in automatically)"):
         c1, c2 = st.columns(2)
         focus_in = c1.text_input("Who or what is it about", placeholder="automatic")
@@ -272,7 +280,8 @@ def ask_page():
     if not has_ai:
         st.caption("Running in keyword mode. Add a free Gemini key (see GUIDE.md) and the app will read headlines with an AI model.")
 
-    if st.button("Analyse", type="primary"):
+    auto = st.session_state.pop("autorun", False)
+    if st.button("Analyse", type="primary") or auto:
         if not question.strip():
             st.error("Type a question first.")
         else:
@@ -311,40 +320,52 @@ def ask_page():
         p_second = answer(ai.build_case(r["question"], focus, r["reading2"], r["sent"], prior0, plan["horizon_days"]), "q", as_of)[0]["yes"]
         lo_yes, hi_yes = min(lo_yes, p_second), max(hi_yes, p_second)
 
+    inverse = bool(plan.get("asks_opposite"))
+    q_of = (lambda x: 1 - x) if inverse else (lambda x: x)   # from the chance of the event to the answer to the question
+    p_q, prior_q = q_of(p_yes), q_of(prior0)
+    lo_q, hi_q = sorted((q_of(lo_yes), q_of(hi_yes)))
+    ev_txt = plan["event"].rstrip(".")
+    if plan.get("statement"):
+        statement = plan["statement"].rstrip(".") + "."
+    elif inverse:
+        statement = r["question"]
+    else:
+        statement = f"{ev_txt} by {deadline:%d %B %Y}."
+
     st.divider()
-    st.subheader(r["question"])
     if r.get("asked") and r["asked"].strip().lower().rstrip("?") != r["question"].strip().lower().rstrip("?"):
-        st.caption(f"You typed: “{r['asked']}”. Understood as the question above. If that is not what you meant, rephrase and run it again.")
+        st.caption(f"You typed: “{r['asked']}”. Understood as: “{r['question']}” If that is not what you meant, rephrase and run it again.")
     for note in r["notes"]:
         st.warning(note)
-    st.caption(f"Focus: {focus}" + (f" (also checked: {', '.join(plan['related'])})" if plan["related"] else "")
-               + f". Settled by {deadline:%d %B %Y} ({plan['horizon_days']} days from {as_of:%d %B %Y}). News source: {', '.join(r['used'])}. "
-               + (f"Headlines read by an AI model ({r.get('model', 'Gemini')})." if reading else "Headlines read by keyword rules."))
     stale = bool(reading) and (not reading["premise_ok"] or reading["already_happened"])
+    if stale:
+        st.subheader(r["question"])
     if reading and not reading["premise_ok"]:
         st.error("This question looks out of date. " + (reading["premise_note"] or "The news suggests its premise no longer holds.")
-                 + " The number below is not meaningful.")
-    elif (reading and reading["already_happened"]) or (not reading and info["maybe_happened"]):
-        st.error("The news suggests this event has already happened. Check the headlines; the number below is not meaningful.")
-    ev_txt = plan["event"].rstrip(".")
+                 + " No estimate is shown.")
+    elif reading and reading["already_happened"]:
+        st.error(f"The news suggests this has already happened: {ev_txt}. No estimate is shown. Check the headlines under Why.")
+    elif not reading and info["maybe_happened"]:
+        st.warning("Several recent headlines report this event directly. It may already have happened: check the headlines.")
     if as_of < date.today() and reading:
         st.warning("You chose a past date. Later headlines are hidden, but the AI model may still remember what happened next, "
                    "so this replay is not a fair test.")
     if not stale:
-        st.markdown(style.hero_yes_no(band(p_yes), show(p_yes), f"{show(lo_yes)} to {show(hi_yes)}", p_yes, lo_yes, hi_yes,
-                                      ev_txt, f"{deadline:%d %B %Y}"), unsafe_allow_html=True)
+        how = f"Worked out as the opposite of the underlying event ({ev_txt}: {approx(p_yes)})." if inverse else f"Underlying event: {ev_txt}."
+        st.markdown(style.brief(statement, band(p_q), approx(p_q), range_text(lo_q, hi_q), p_q, lo_q, hi_q, how), unsafe_allow_html=True)
         if n_sig == 0:
             why = "Nothing in the recent news changes the picture, so this is the starting value."
+        elif show(p_q) == show(prior_q):
+            why = f"The recent news barely moves it from the starting value of {show(prior_q)}."
         else:
-            move = "raised" if p_yes > prior0 else "lowered"
-            why = f"The news {move} it from a starting value of {show(prior0)}."
+            why = f"The news {'raised' if p_q > prior_q else 'lowered'} it from a starting value of {show(prior_q)}."
         why += " The range covers nearby engine settings and a starting value half or twice as likely."
-        if p_second is not None:
-            gap = abs(p_second - p_yes)
-            why += (f" A second reading of the same headlines gave about {show(p_second)}: "
-                    + ("the two agree." if gap < 0.05 or gap < 0.25 * max(p_yes, p_second) else "the two differ, so treat the number with extra caution."))
         if damp < 0.99:
             why += f" The deadline is {plan['horizon_days']} days away, so today's news is counted at {damp:.0%} of its normal weight."
+        if p_second is not None:
+            gap = abs(p_second - p_yes)
+            why += (f" A second reading of the same headlines gave {approx(q_of(p_second))}: "
+                    + ("the two agree." if gap < 0.05 or gap < 0.25 * max(p_yes, p_second) else "the two differ, so treat the number with extra caution."))
         st.markdown(why)
         cautions = []
         if not reading:
@@ -353,11 +374,11 @@ def ask_page():
             cautions.append(f"only {info['read']} headlines were found")
         if plan["horizon_days"] > 180:
             cautions.append("the deadline is far away")
-        if hi_yes - lo_yes > 0.3:
+        if hi_q - lo_q > 0.3:
             cautions.append("the range is wide")
         if p_second is not None and abs(p_second - p_yes) >= max(0.05, 0.25 * max(p_yes, p_second)):
             cautions.append("two readings of the same headlines disagreed")
-        if prior0 >= 0.2 and plan.get("by") == "ai":
+        if 0.2 <= prior0 <= 0.8 and plan.get("by") == "ai":
             cautions.append("the result leans heavily on the starting value, which is the AI model's judgment")
         level = "Low" if len(cautions) >= 2 or not reading else "Moderate"
         st.markdown(style.note(f"How much to rely on this: {level}.", "Reasons for caution: " + "; ".join(cautions) + "." if cautions
@@ -366,32 +387,31 @@ def ask_page():
     if reading and reading["summary"]:
         st.markdown(style.note("What the news says.", reading["summary"]), unsafe_allow_html=True)
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Chance the event happens", "n/a" if stale else "about " + show(p_yes))
+    m1.metric("Answer", "n/a" if stale else approx(p_q))
     if not stale:
-        m1.caption(f"Range {show(lo_yes)} to {show(hi_yes)}")
-    m2.metric("Starting value", show(prior0), help=plan.get("prior_reason", ""))
+        m1.caption(f"Range {range_text(lo_q, hi_q)}")
+    m2.metric("Starting value", show(prior_q), help=plan.get("prior_reason", ""))
     m2.caption(plan.get("prior_reason", ""))
     m3.metric("Headlines read", info["read"])
     m4.metric("Developments that counted" if reading else "Unusual signals", n_sig)
-    if plan.get("asks_opposite") and not stale:
-        st.info(f"Your question asks whether things stay as they are. That is the opposite of the event, "
-                f"so the answer to your question is about {show(1 - p_yes)}.")
+    st.caption(f"Searched for {focus}" + (f" (also {', '.join(plan['related'])})" if plan["related"] else "")
+               + f". Settles by {deadline:%d %B %Y}, {plan['horizon_days']} days from {as_of:%d %B %Y}. News source: {', '.join(r['used'])}. "
+               + (f"Headlines read by an AI model ({r.get('model', 'Gemini')})." if reading else "Headlines read by keyword rules.")
+               + " Experimental, with no track record.")
     if info["read"] == 0:
         st.warning("No headlines came back. Check the spelling of the name, or type a shorter one under Advanced.")
-    st.caption("Experimental. No track record. Not a validated forecast.")
 
     t_why, t_cov, t_time, t_all, t_lim = st.tabs(["Why", "Coverage", "Over time", "All headlines", "Limits"])
     with t_why:
         if reading:
-            eff = {e.id: c for e, c in detail["yes"]}
             if reading["developments"]:
-                st.dataframe(pd.DataFrame([{
-                    "Date": dv["date"], "Development": dv["summary"],
-                    "Pushes the chance": "Up" if dv["direction"] == "up" else "Down", "Strength": dv["strength"],
-                    "Effect": round(eff.get(f"d{n}", 0.0), 2),
-                    "Sources": src_label([r["sent"][i].source for i in dv["ids"]]),
-                    "Source": r["sent"][dv["ids"][0]].link} for n, dv in enumerate(reading["developments"])]),
-                    hide_index=True, column_config=LINK, width="stretch")
+                flip = {"up": "down", "down": "up"}
+                st.markdown(style.ledger([{
+                    "date": dv["date"], "text": dv["summary"],
+                    "effect": flip[dv["direction"]] if inverse else dv["direction"],
+                    "effect_label": "Raises the estimate" if (dv["direction"] == "up") != inverse else "Lowers the estimate",
+                    "strength": dv["strength"], "sources": src_label([r["sent"][i].source for i in dv["ids"]]),
+                    "url": r["sent"][dv["ids"][0]].link} for dv in reading["developments"]]), unsafe_allow_html=True)
                 for n, dv in enumerate(reading["developments"]):
                     with st.expander(f"Headlines behind: {dv['summary']}"):
                         for i in dv["ids"][:8]:
@@ -411,7 +431,7 @@ def ask_page():
         box = st.expander("Keyword check (the simpler method, for comparison)") if reading else st.container()
         with box:
             if reading:
-                st.caption(f"Keyword rules alone give about {show(k_p)}.")
+                st.caption(f"Keyword rules alone give {approx(q_of(k_p))} for the same question.")
             effect = {e.id: c for e, c in k_detail}
             if rows:
                 st.dataframe(pd.DataFrame([{
@@ -446,7 +466,7 @@ def ask_page():
             ys = [answer(case, "q", d)[0]["yes"] for d in days_]
         else:
             ys = [live.forecast(r["question"], focus, tagged, kinds, [], d, prior0, damp)[0] for d in days_]
-        st.line_chart(pd.DataFrame({"Date": days_, "Chance the event happens": ys}).set_index("Date"), y_label="Probability")
+        st.line_chart(pd.DataFrame({"Date": days_, "Estimate": [q_of(y) for y in ys]}).set_index("Date"), y_label="Probability")
         st.caption("Illustrative only, not a blind backtest: the developments were picked out today, with today's knowledge. "
                    "The chart shows when each one was published." if reading else "Each point uses only what was published by that day.")
     with t_all:
@@ -472,8 +492,8 @@ def ask_page():
 - **People.** A probability is not an accusation. Use this for public figures and organisations.
 """)
     log = {"question": r["question"], "focus": focus, "event": plan["event"], "as_of": str(as_of),
-           "deadline": plan["deadline"], "horizon_days": plan["horizon_days"], "starting_value": prior0, "probability": None if stale else round(p_yes, 4),
-           "low": round(lo_yes, 4), "high": round(hi_yes, 4), "headlines_read": info["read"],
+           "deadline": plan["deadline"], "horizon_days": plan["horizon_days"], "statement": statement, "starting_value": round(prior_q, 4),
+           "probability": None if stale else round(p_q, 4), "low": round(lo_q, 4), "high": round(hi_q, 4), "headlines_read": info["read"],
            "reader": "ai" if reading else "keywords", "engine": "0.5 live"}
     st.download_button("Download this forecast (keep it to score later)", json.dumps(log, indent=2),
                        file_name=f"forecast_{as_of}.json", mime="application/json")
@@ -482,7 +502,6 @@ def ask_page():
 
 
 def scorecard_page():
-    st.markdown('<div class="ew-eyebrow">Track record</div>', unsafe_allow_html=True)
     st.title("Scorecard")
     st.caption("A forecast earns trust only by being scored. Save forecasts with 'Download this forecast' when you make them, "
                "then load the files here once the answers are known.")
@@ -522,13 +541,112 @@ def scorecard_page():
                + ("Fewer than 30 scored forecasts: far too few to conclude anything." if n < 30 else "Calibration is good when each band's share that happened is close to its average forecast."))
 
 
-if page.startswith("Ask") or page.startswith("Scorecard"):
+def go_analyse(q: str | None = None):
+    st.session_state["q"] = (q if q is not None else st.session_state.get("home_q", "")).strip()
+    st.session_state["page"] = "Analyse"
+    st.session_state["autorun"] = bool(st.session_state["q"])
+
+
+EXAMPLES = ["Who will be the next permanent CEO of Nvidia?", "Will Nvidia name a permanent CEO within 365 days?",
+            "Will the Federal Reserve change interest rates in the next 12 months?"]
+LIMITS = ["It reads public headlines only. Private knowledge is invisible to it.",
+          "It has no track record yet. Nothing here has been scored against outcomes.",
+          "The starting value is a judgment, and the result depends heavily on it.",
+          "An AI model picks out the developments and can misjudge them.",
+          "It will not answer questions about prices, private individuals, or a named person's death or health."]
+
+
+def home_page():
+    st.title("What does the public record say will happen?")
+    st.markdown(f'<div class="ew-lede">{NAME} reads dated public news about a person, company or country, weighs each source, '
+                'and gives a sober estimate of what comes next, with the evidence shown and the uncertainty stated.</div>',
+                unsafe_allow_html=True)
+    c1, c2 = st.columns([5, 1], vertical_alignment="bottom")
+    c1.text_input("Ask a question", key="home_q", placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?")
+    c2.button("Analyse", type="primary", on_click=go_analyse, key="home_go", width="stretch")
+    st.caption("Or start from one of these:")
+    for col, q in zip(st.columns(len(EXAMPLES)), EXAMPLES):
+        col.button(q, on_click=go_analyse, args=(q,), key=f"ex_{q}", width="stretch")
+
+    st.markdown('<div class="ew-example-tag">What an answer looks like (an illustration with invented names, not a live result):</div>',
+                unsafe_allow_html=True)
+    st.markdown(style.brief("Acme rehires Jane Doe as chief executive by 30 October 2027.", "Very unlikely", "about 4%", "2% to 8%",
+                            0.04, 0.02, 0.08, "Underlying event: Acme rehires Jane Doe as chief executive."), unsafe_allow_html=True)
+    st.subheader("How it works")
+    st.markdown(style.steps(), unsafe_allow_html=True)
+    st.markdown(style.two_lists(
+        "What it does", ["Shows every development behind a number, with dates and links.",
+                         "Rates each outlet and marks unconfirmed claims down.",
+                         "Uses only what was published by the date you choose.",
+                         "Gives a range, and says how much to rely on each answer.",
+                         "Lets you save forecasts and score them later."],
+        "What it does not do", LIMITS), unsafe_allow_html=True)
+    if SITE.get("video_url", "").startswith("http"):
+        st.subheader("A short walkthrough")
+        st.video(SITE["video_url"])
+
+
+def method_page():
+    st.title("How an estimate is made")
+    st.markdown('<div class="ew-lede">The AI model reads and labels. It never sets the number. A small, fixed engine does that, '
+                'so every estimate can be traced back to dated headlines.</div>', unsafe_allow_html=True)
+    st.markdown(style.PIPELINE_SVG, unsafe_allow_html=True)
+    st.subheader("Starting value, then evidence")
+    st.markdown("Every estimate starts from how often that kind of event happens to comparable people or organisations over the "
+                "same period. Dramatic news is common and big events are rare, so the starting value matters more than any single "
+                "headline. Each development then moves the estimate up or down. Strong, well-sourced developments move it more; "
+                "repeats of the same story count once; news about a far-off deadline counts for less.")
+    st.subheader("Which sources count")
+    st.markdown(style.tiers([("High", 0.9, "Wire services, public broadcasters, major newspapers, official sites"),
+                             ("Medium", 0.75, "Established national, business and technology press"),
+                             ("Unknown", 0.55, "Outlets not on the list"),
+                             ("Low", 0.35, "Press-release services, tabloids, state-controlled outlets, opinion platforms"),
+                             ("Satire", 0.0, "Dropped before anything is read")]), unsafe_allow_html=True)
+    st.markdown("A claim confirmed by several reliable outlets counts for more. A claim carried only by low or unknown outlets can "
+                "never be more than a weak signal. The list is an editable file, `configs/sources.json`.")
+    st.subheader("What the range means")
+    st.markdown("The range shows how far the estimate moves under nearby engine settings and under a starting value half or twice "
+                "as likely. Numbers are rounded to the nearest 5% (1% at the extremes) because the method is not more precise than that.")
+    st.subheader("Limits")
+    st.markdown("\n".join(f"- {x}" for x in LIMITS + [
+        "Replays of past dates are illustrative: today's search engine chooses which old headlines return, and an AI model may remember outcomes.",
+        "Checks such as 'out of date' are the AI model's reading of the headlines, not guarantees.",
+        "Questions and headlines are treated as untrusted data and instruction-like text is refused. This lowers the risk of manipulation; it does not remove it."]))
+    st.subheader("System check")
+    st.markdown("Runs a fixed set of difficult questions through the live AI model and checks that each is understood correctly. "
+                "It uses about ten AI calls from the free daily allowance.")
+    if not ai_key():
+        st.caption("Needs the AI reader (a Gemini key in the app's Secrets).")
+    elif st.button("Run the system check"):
+        with st.spinner("Checking how the AI model understands 13 difficult questions..."):
+            rows = selftest.run(ai_key(), date.today())
+        passed = sum(x["Result"] == "Pass" for x in rows)
+        (st.success if passed == len(rows) else st.warning)(f"{passed} of {len(rows)} checks passed.")
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+
+
+def contact_page():
+    st.title("Contact")
+    who = " ".join(x for x in (SITE.get("contact_name", ""), SITE.get("organisation", "")) if x)
+    st.markdown(f'<div class="ew-lede">{NAME} is an early prototype. Questions, corrections and proposals for evaluation are welcome.</div>',
+                unsafe_allow_html=True)
+    if who:
+        st.markdown(f"**{who}**")
+    if "@" in SITE.get("contact_email", ""):
+        st.markdown(f"Email: [{SITE['contact_email']}](mailto:{SITE['contact_email']})")
+    if SITE.get("contact_url", "").startswith("http"):
+        st.markdown(f"{SITE.get('contact_url_label') or 'Website'}: [{SITE['contact_url']}]({SITE['contact_url']})")
+    st.caption("The source code and the evidence files for the worked examples are public in the project repository.")
+
+
+ROUTES = {"Home": home_page, "Analyse": ask_page, "Scorecard": scorecard_page, "Method": method_page, "Contact": contact_page}
+if page in ROUTES:
     try:
-        ask_page() if page.startswith("Ask") else scorecard_page()
+        ROUTES[page]()
     except Exception as err:  # never show a raw traceback to an audience
         if os.environ.get("EW_DEBUG"):
             raise
-        st.error("Something went wrong while preparing this answer. Please try again, or load a saved result under Advanced.")
+        st.error("Something went wrong while preparing this page. Please try again, or load a saved result under Advanced on the Analyse page.")
         with st.expander("Technical details"):
             st.code(repr(err))
     st.stop()
@@ -560,7 +678,6 @@ leak = st.sidebar.checkbox("Reveal what hindsight would add", value=False,
 st.sidebar.caption(f"Settings: {settings.label()}")
 
 # ---------------------------------------------------------------- headline
-st.markdown('<div class="ew-eyebrow">Worked example</div>', unsafe_allow_html=True)
 st.title(case.spec["name"])
 st.subheader(q["text"])
 st.caption(f"Using only records public by the end of {as_of:%d %B %Y}. Focus of the investigation: "
