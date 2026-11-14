@@ -82,12 +82,29 @@ class Plan(unittest.TestCase):
     def test_plan_is_cleaned_and_clamped(self):
         ai._model_cache.clear()
         p = ai.plan("k", "will jane doe stay ceo of acme", AS_OF, http=fake(
-            {"focus": "Jane Doe", "related": ["Acme", "", "A", "B", "C"], "event": "Jane Doe stops being chief executive of Acme",
-             "asks_opposite": True, "template": "nonsense", "horizon_days": 9999, "base_rate_percent": 80, "base_rate_reason": "r"}))
+            {"kind": "yes_no", "focus": "Jane Doe", "related": ["Acme", "", "A", "B", "C"], "event": "Jane Doe stops being chief executive of Acme",
+             "asks_opposite": True, "template": "nonsense", "deadline": "2999-01-01", "base_rate_percent": 500, "base_rate_reason": "r"}))
         self.assertEqual(p["focus"], "Jane Doe")
         self.assertEqual(len(p["related"]), 3)
-        self.assertEqual((p["template"], p["horizon_days"], p["prior"]), ("custom", 365, 0.5))
+        self.assertEqual((p["template"], p["horizon_days"], p["prior"]), ("custom", 3650, 0.99))
         self.assertTrue(p["asks_opposite"])
+
+    def test_scheduled_event_keeps_its_real_date(self):
+        ai._model_cache.clear()
+        p = ai.plan("k", "will the party win the next election", AS_OF, http=fake(
+            {"kind": "yes_no", "focus": "Party", "event": "e", "deadline": "2028-11-07", "scheduled": True, "base_rate_percent": 50}))
+        self.assertEqual((p["deadline"], p["horizon_days"], p["scheduled"]), ("2028-11-07", 728, True))
+
+    def test_bad_or_past_deadline_defaults_to_30_days(self):
+        for bad in ("soon", "2020-01-01", None):
+            ai._model_cache.clear()
+            p = ai.plan("k", "q", AS_OF, http=fake({"focus": "X", "deadline": bad}))
+            self.assertEqual(p["horizon_days"], 30)
+
+    def test_unsupported_is_passed_through(self):
+        ai._model_cache.clear()
+        p = ai.plan("k", "what will the price be", AS_OF, http=fake({"kind": "unsupported", "unsupported_reason": "Asks for a number.", "suggestion": "Will it pass 100?"}))
+        self.assertEqual((p["kind"], p["suggestion"]), ("unsupported", "Will it pass 100?"))
 
     def test_plan_without_focus_fails(self):
         ai._model_cache.clear()
@@ -136,6 +153,17 @@ class Read(unittest.TestCase):
         self.assertEqual(len(reading["developments"]), ai.MAX_DEVELOPMENTS)
         p = answer_with_range(ai.build_case("q", "Jane Doe", reading, sent, 0.01), "q", AS_OF)[0]["yes"]
         self.assertLess(p, 0.35)
+
+    def test_at_most_two_strong_and_far_deadlines_count_less(self):
+        ai._model_cache.clear()
+        hs = [H(f"Jane Doe story {i}", i) for i in range(6)]
+        reply = {"developments": [{"summary": f"d{i}", "direction": "down", "strength": "strong", "headline_ids": [i]} for i in range(4)]}
+        reading, sent = ai.read("k", "q", self.PLAN, hs, AS_OF, http=fake(reply))
+        self.assertEqual([d["strength"] for d in reading["developments"]], ["strong", "strong", "medium", "medium"])
+        near = answer_with_range(ai.build_case("q", "X", reading, sent, 0.5, 30), "q", AS_OF)[0]["yes"]
+        far = answer_with_range(ai.build_case("q", "X", reading, sent, 0.5, 725), "q", AS_OF)[0]["yes"]
+        self.assertLess(near, far)
+        self.assertGreater(far, 0.3)
 
     def test_stale_premise_is_passed_through(self):
         ai._model_cache.clear()

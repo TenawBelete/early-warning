@@ -33,6 +33,7 @@ from email.utils import parsedate_to_datetime
 from .baseline import robust_z
 from .cases import Case
 from .evidence import Evidence
+from .sources import credibility, support
 
 UA = {"User-Agent": "Mozilla/5.0 (early-warning research prototype)"}
 PER_QUERY_CAP = 100  # Google News returns at most about 100 items per search
@@ -242,8 +243,8 @@ def collect(focus: str, related: list[str], as_of: date, weeks: int = 10, get=_g
         n = 0
         for h in items:
             key = re.sub(r"\W+", " ", h.title.lower()).strip()
-            if h.published > as_of or key in seen:
-                continue
+            if h.published > as_of or key in seen or credibility(h.source) <= 0:
+                continue  # after the cutoff, a repeat, or satire
             seen.add(key)
             heads.append(h)
             n += 1
@@ -265,8 +266,7 @@ def collect(focus: str, related: list[str], as_of: date, weeks: int = 10, get=_g
 
 # ------------------------------------------------------------------ coding
 def reliability(source: str) -> float:
-    s = source.lower()
-    return 0.9 if any(t in s for t in TOP_SOURCES) else 0.6
+    return credibility(source)
 
 
 def signals_for(template: str, yes_words: list[str], no_words: list[str]):
@@ -308,11 +308,17 @@ def tag_headlines(heads: list[Headline], template: str, yes_words=None, no_words
     return out, {n: (f, lr) for n, f, lr, _ in sig}
 
 
+def horizon_damp(horizon_days: int) -> float:
+    """Today's news says less about far-off events. Full weight up to 60 days, then shrinking with the square root
+    of the distance (0.41 at one year, 0.29 at two). Analyst-set, not measured."""
+    return min(1.0, (60 / max(1, horizon_days)) ** 0.5)
+
+
 def build_case(question: str, focus: str, tagged, kinds: dict, counts: list[int], as_of: date, prior_yes: float,
-               recent_days: int = RECENT_DAYS) -> tuple[Case, dict]:
+               recent_days: int = RECENT_DAYS, damp: float = 1.0) -> tuple[Case, dict]:
     """Compare recent coverage with the name's own baseline and turn the differences into a Case."""
     cut = as_of - timedelta(days=recent_days)
-    types: dict = {"attention_spike": {"family": "attention", "lr": {"yes": 1.3}}}
+    types: dict = {"attention_spike": {"family": "attention", "lr": {"yes": 1.3 ** damp}}}
     ev: list[Evidence] = []
     rows: list[dict] = []
     for group, rel_name in (("focus", "focus"), ("related", "related_name")):
@@ -338,11 +344,12 @@ def build_case(question: str, focus: str, tagged, kinds: dict, counts: list[int]
             if n_b < 20:
                 strength *= 0.5  # no real baseline to compare with
             name = f"{kind}@{group}"
-            types[name] = {"family": family, "lr": {"yes": lr ** strength}}
+            types[name] = {"family": family, "lr": {"yes": lr ** (strength * damp)}}
             usual_txt = f"usual {k_b / n_b:.0%}" if n_b >= 20 else "too little earlier coverage to know what is usual"
             ev.append(Evidence(name, as_of, as_of, rel_name, name,
                                f"{LABELS.get(kind, kind)}: {k_r} of the last {n_r} headlines ({k_r / n_r:.0%}); {usual_txt}",
-                               ex[0].link, max(reliability(h.source) for h in ex), group))
+                               ex[0].link, support([h.source for h in ex])[0], group))
+            row["support"] = support([h.source for h in ex])[1]
             row["counted"] = True
 
     z = None
@@ -364,13 +371,13 @@ def build_case(question: str, focus: str, tagged, kinds: dict, counts: list[int]
     return Case("live", spec, catalog, ev, {"focus": (1.0, 0), "related_name": (0.5, 1)}), info
 
 
-def forecast(question, focus, tagged, kinds, counts, as_of, prior_yes):
+def forecast(question, focus, tagged, kinds, counts, as_of, prior_yes, damp: float = 1.0):
     """Central number, plus the lowest and highest across nearby engine settings and 7/14/28-day 'recent' windows."""
-    case, info = build_case(question, focus, tagged, kinds, counts, as_of, prior_yes)
+    case, info = build_case(question, focus, tagged, kinds, counts, as_of, prior_yes, RECENT_DAYS, damp)
     probs, detail, _ = answer(case, "q", as_of)
     lo = hi = probs["yes"]
     for days in (7, 14, 28):
-        c, _ = build_case(question, focus, tagged, kinds, counts, as_of, prior_yes, days)
+        c, _ = build_case(question, focus, tagged, kinds, counts, as_of, prior_yes, days, damp)
         for st in neighbours(V0):
             v = answer(c, "q", as_of, st)[0]["yes"]
             lo, hi = min(lo, v), max(hi, v)
@@ -407,5 +414,5 @@ def auto_plan(question: str) -> dict:
         horizon = int(m.group(1)) * {"day": 1, "week": 7, "month": 30, "year": 365}[m.group(2)]
     horizon = min(365, max(1, horizon))
     return {"focus": focus, "related": [], "event": TEMPLATES[template]["name"], "asks_opposite": asks_opposite(question, template),
-            "template": template, "horizon_days": horizon, "prior": base_rate(template, horizon),
+            "template": template, "horizon_days": horizon, "deadline": "", "kind": "yes_no", "prior": base_rate(template, horizon),
             "prior_reason": "Rough default for this type of event.", "by": "keywords"}

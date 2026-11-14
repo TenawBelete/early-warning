@@ -25,7 +25,8 @@ from datetime import date, timedelta
 
 from .cases import Case
 from .evidence import Evidence
-from .live import HALF_LIFE, TEMPLATES, Headline, reliability
+from .live import HALF_LIFE, TEMPLATES, Headline, horizon_damp
+from .sources import support, tier
 
 API = "https://generativelanguage.googleapis.com/v1beta"
 STRENGTH = {"weak": 1.3, "medium": 1.8, "strong": 3.0}  # analyst-set, same scale as the keyword rules
@@ -49,7 +50,8 @@ def _http(url: str, key: str, body: dict | None = None, timeout: int = 40) -> di
             msg = json.loads(e.read())["error"]["message"]
         except Exception:
             msg = str(e)
-        raise AIError(f"AI service error {e.code}: {msg[:300]}") from e
+        hint = " (the free limit for now has been reached; try again later)" if e.code == 429 else ""
+        raise AIError(f"AI service error {e.code}{hint}: {msg[:200]}") from e
     except Exception as e:
         raise AIError(f"Could not reach the AI service: {e}") from e
 
@@ -110,40 +112,69 @@ def ask(key: str, prompt: str, model: str | None = None, http=_http) -> dict:
 
 
 # ------------------------------------------------------------------ plan
-PLAN_PROMPT = """You set up a forecasting question for an early-warning tool. Today is {today}.
+PLAN_PROMPT = """You set up a forecasting question for an early-warning tool that reads public news. Today is {today}.
 
-Question: "{question}"
+Question as typed by the user (may contain typos, bad grammar, wrong names or missing words): "{question}"
+{context}
+First work out what the user most plausibly means, the way a careful reader would: fix spelling and grammar, correct misspelled names (for example "nvidea" means Nvidia), and use the previous question, if any, to fill in what a follow-up leaves out.
 
 Return JSON with exactly these keys:
-- "kind": "who" if the question asks WHO or WHICH of several people or things will be chosen, win or be next (for example "who will be the next chief executive of Acme?"); otherwise "yes_no".
-- "focus": for a "yes_no" question, the single person, company or country to search news for, as a news headline would write the name (proper capitalisation). For a "who" question, the short phrase a headline about this contest would contain (for example "Acme CEO"), correctly spelled.
-- "related": up to 3 other names worth a lighter look (a rival, the organisation, a counterpart). May be empty.
-- "event": one short sentence stating the EVENT that would count as it happening, phrased as a change (for example "Jane Doe stops being chief executive of Acme"), never as things staying the same.
+- "restated": the question rewritten as one clear, correctly spelled sentence that says exactly what will be checked. Keep the user's meaning; do not add claims.
+- "kind": one of
+    "yes_no"  - asks whether a specific, checkable event will happen;
+    "who"     - asks WHO or WHICH of several people or things will be chosen, win or be next;
+    "unsupported" - anything this tool should not or cannot answer:
+        not about the future (a past fact, a definition, an opinion, advice);
+        asks for a number, price, amount or date (how much, how many, when);
+        too vague to check later (for example "will something bad happen");
+        about a private individual who is not a public figure;
+        about a named person's death, health, safety or private life;
+        not a question at all.
+- "unsupported_reason": if unsupported, one plain sentence saying why. Else "".
+- "suggestion": if unsupported and a nearby question would work, that question as a yes/no or who question with a time limit. Else "".
+- "focus": for "yes_no", the single person, company or country to search news for, as a headline would write it (proper capitalisation, correct spelling). For "who", the short phrase a headline about this contest would contain (for example "Acme CEO").
+- "related": up to 3 other proper names worth a lighter look (a rival, the organisation, a counterpart). Names only, no job titles. May be empty.
+- "event": one short sentence stating the EVENT that would count as it happening, phrased as a change or outcome (for example "Jane Doe stops being chief executive of Acme"), never as things staying the same.
 - "asks_opposite": true if the question asks whether things will stay the same (so the answer to the question is 1 minus the chance of the event), else false.
 - "template": the closest of {templates}.
-- "horizon_days": the time window in days stated or implied by the question; 30 if none.
-- "base_rate_percent": how often an event like this happens to comparable people or organisations over a window of that length in ordinary times, as a percentage between 0.1 and 50. Be sober: big events are rare.
+- "deadline": the date (YYYY-MM-DD) by which the question will be settled. If the question states a time limit, use it. If the event is scheduled (an election, a vote, a ruling, a meeting), use the scheduled date of the NEXT such event after today, however far away. Otherwise use 30 days from today.
+- "scheduled": true if the deadline is the date of a scheduled event, else false.
+- "base_rate_percent": the chance of the event by the deadline, judged BEFORE any recent news, from how often such events happen to comparable people or organisations, as a percentage between 0.1 and 99. Be sober: big changes are rare; a contest between two evenly matched sides is near 50.
 - "base_rate_reason": one sentence explaining that number.
 """
 
 
-def plan(key: str, question: str, today: date, http=_http) -> dict:
-    d = ask(key, PLAN_PROMPT.format(today=today, question=question.replace('"', "'"), templates=list(TEMPLATES)), http=http)
+def plan(key: str, question: str, today: date, http=_http, context: str = "") -> dict:
+    ctx = f'The previous question in this session was: "{context[:300]}". Use it only if the new question depends on it.\n' if context else ""
+    d = ask(key, PLAN_PROMPT.format(today=today, question=question.replace('"', "'")[:300], context=ctx.replace("{", "(").replace("}", ")"),
+                                    templates=list(TEMPLATES)), http=http)
+    if d.get("kind") == "unsupported":
+        return {"kind": "unsupported", "by": "ai",
+                "reason": str(d.get("unsupported_reason", "")).strip()[:300] or "This is not a question the tool can check against future news.",
+                "suggestion": str(d.get("suggestion", "")).strip()[:200]}
     focus = str(d.get("focus", "")).strip()
     if not focus:
         raise AIError("The AI could not tell who or what the question is about.")
     try:
-        horizon = int(d.get("horizon_days") or 30)
+        deadline = date.fromisoformat(str(d.get("deadline", ""))[:10])
+    except ValueError:
+        deadline = today + timedelta(days=30)
+    if deadline <= today:
+        deadline = today + timedelta(days=30)
+    deadline = min(deadline, today + timedelta(days=3650))
+    try:
         rate = float(d.get("base_rate_percent") or 0)
     except (TypeError, ValueError):
-        horizon, rate = 30, 0.0
+        rate = 0.0
     tpl = d.get("template") if d.get("template") in TEMPLATES else "custom"
     return {"focus": focus[:80], "related": [str(x).strip()[:80] for x in (d.get("related") or []) if str(x).strip()][:3],
             "event": str(d.get("event", "")).strip()[:200] or question, "asks_opposite": bool(d.get("asks_opposite")),
-            "template": tpl, "horizon_days": min(365, max(1, horizon)),
-            "prior": min(0.5, max(0.001, rate / 100)) if rate > 0 else None,
+            "template": tpl, "deadline": deadline.isoformat(), "scheduled": bool(d.get("scheduled")),
+            "horizon_days": (deadline - today).days,
+            "prior": min(0.99, max(0.001, rate / 100)) if rate > 0 else None,
             "prior_reason": str(d.get("base_rate_reason", "")).strip()[:300], "by": "ai",
-            "kind": "who" if d.get("kind") == "who" else "yes_no"}
+            "kind": "who" if d.get("kind") == "who" else "yes_no",
+            "restated": str(d.get("restated", "")).strip()[:300] or question}
 
 
 # ------------------------------------------------------------------ read
@@ -153,9 +184,9 @@ Use ONLY the headlines below. Do not use anything you know about events after {a
 Question: "{question}"
 Focus: {focus}
 The event that would count as happening: {event}
-Time window: the {horizon} days after {as_of}.
+The question is settled by {deadline} ({horizon} days after the cutoff).
 
-Headlines (id | date | outlet | headline), newest first:
+Headlines (id | date | outlet [credibility of the outlet: high, medium, low or unknown] | headline), newest first:
 {lines}
 
 Return JSON with exactly these keys:
@@ -165,8 +196,14 @@ Return JSON with exactly these keys:
 - "developments": at most {maxdev} DISTINCT developments from the 28 days before the cutoff that genuinely make the event more or less likely than normal for this focus. Merge headlines about the same development into one. Ignore routine coverage, opinion, speculation without facts, and stories about other people. It is fine to return an empty list. Each item:
     {{"date": "YYYY-MM-DD" (latest headline about it), "summary": your own words, at most 20 words,
       "direction": "up" or "down" (effect on the chance of the event),
-      "strength": "weak", "medium" or "strong" (strong only for direct, factual, well-sourced developments),
+      "strength": "weak", "medium" or "strong",
       "headline_ids": [ids]}}
+  How to judge strength: ask how much MORE often this development would be seen when the event is coming than when it is not.
+    strong = direct, factual, well-sourced and rarely seen otherwise (use for at most 2 developments);
+    medium = clearly relevant but also seen fairly often when the event does not follow;
+    weak   = commentary, speculation, expected or routine setbacks, or anything that usually happens anyway.
+  Several headlines with the same underlying cause are ONE development, not several.
+  Source credibility: a development reported only by [low] or [unknown] outlets is weak at most, and say "unconfirmed" in its summary. Prefer developments confirmed by [high] outlets. List every headline id that reports the development.
 - "summary": two or three plain sentences on what the recent news says about this question. Do not give a probability.
 """
 
@@ -184,9 +221,9 @@ def select_headlines(heads: list[Headline], as_of: date, recent: int = 160, olde
 def read(key: str, question: str, p: dict, heads: list[Headline], as_of: date, http=_http) -> tuple[dict, list[Headline]]:
     sent = select_headlines(heads, as_of)
     assert all(h.published <= as_of for h in sent)  # the date gate
-    lines = "\n".join(f"{i} | {h.published} | {h.source} | {h.title}" for i, h in enumerate(sent)) or "(none)"
+    lines = "\n".join(f"{i} | {h.published} | {h.source} [{tier(h.source)}] | {h.title}" for i, h in enumerate(sent)) or "(none)"
     d = ask(key, READ_PROMPT.format(as_of=as_of, question=question.replace('"', "'"), focus=p["focus"], event=p["event"],
-                                    horizon=p["horizon_days"], lines=lines, maxdev=MAX_DEVELOPMENTS), http=http)
+                                    horizon=p["horizon_days"], deadline=p.get("deadline", "the end of the window"), lines=lines, maxdev=MAX_DEVELOPMENTS), http=http)
     devs = []
     for x in (d.get("developments") or [])[:MAX_DEVELOPMENTS]:
         if not isinstance(x, dict) or x.get("direction") not in ("up", "down") or x.get("strength") not in STRENGTH:
@@ -195,22 +232,29 @@ def read(key: str, question: str, p: dict, heads: list[Headline], as_of: date, h
         if not ids:
             continue  # a development with no headline behind it is not used
         when = max(sent[i].published for i in ids)  # dated by its own headlines, never by the model
+        strength = x["strength"]
+        if support([sent[i].source for i in ids])[1] == "Low":
+            strength = "weak"  # poorly sourced claims never count for much, whatever the model says
+        if strength == "strong" and sum(dv["strength"] == "strong" for dv in devs) >= 2:
+            strength = "medium"  # at most two strong developments, whatever the model says
         devs.append({"date": when, "summary": str(x.get("summary", "")).strip()[:200], "direction": x["direction"],
-                     "strength": x["strength"], "ids": ids})
+                     "strength": strength, "ids": ids})
     return ({"premise_ok": d.get("premise_ok") is not False, "premise_note": str(d.get("premise_note", "")).strip()[:300],
              "already_happened": bool(d.get("already_happened")), "developments": devs,
              "summary": str(d.get("summary", "")).strip()[:700]}, sent)
 
 
-def build_case(question: str, focus: str, reading: dict, sent: list[Headline], prior_yes: float) -> Case:
+def build_case(question: str, focus: str, reading: dict, sent: list[Headline], prior_yes: float, horizon_days: int = 30) -> Case:
     types, ev = {}, []
+    damp = horizon_damp(horizon_days)  # news counts for less when the deadline is far away
     for s, lr in STRENGTH.items():
+        lr = lr ** damp
         types[f"up_{s}"] = {"family": "ai_up", "lr": {"yes": lr}}
         types[f"down_{s}"] = {"family": "ai_down", "lr": {"yes": 1 / lr}}
     for n, dv in enumerate(reading["developments"]):
         hs = [sent[i] for i in dv["ids"]]
         ev.append(Evidence(f"d{n}", dv["date"], dv["date"], "focus", f"{dv['direction']}_{dv['strength']}", dv["summary"],
-                           hs[0].link, max(reliability(h.source) for h in hs), ", ".join(sorted({h.source for h in hs})[:3])))
+                           hs[0].link, support([h.source for h in hs])[0], ", ".join(sorted({h.source for h in hs})[:3])))
     catalog = {"types": types, "half_life_days": {**HALF_LIFE, "ai_up": 21, "ai_down": 21}, "watch_families": []}
     spec = {"name": question, "focus_entity": focus,
             "questions": [{"id": "q", "text": question, "kind": "live", "priors": {"yes": prior_yes, "no": 1 - prior_yes}}]}
@@ -246,7 +290,7 @@ Use the headlines below. Do not use anything you know about events after {as_of}
 
 Question: "{question}"
 
-Headlines (id | date | outlet | headline), newest first:
+Headlines (id | date | outlet [credibility of the outlet: high, medium, low or unknown] | headline), newest first:
 {lines}
 
 Return JSON with exactly these keys:
@@ -259,6 +303,7 @@ Return JSON with exactly these keys:
       "direction": "up" or "down", "strength": "weak", "medium" or "strong" (strong only for direct, factual, well-sourced developments),
       "headline_ids": [ids]}}
   Being named interim or acting holder is a development; speculation and opinion pieces are weak at most.
+  Source credibility: a development reported only by [low] or [unknown] outlets is weak at most. List every headline id that reports it.
 - "summary": two or three plain sentences on where things stand. Do not give probabilities.
 """
 
@@ -266,7 +311,7 @@ Return JSON with exactly these keys:
 def read_who(key: str, question: str, heads: list[Headline], as_of: date, http=_http) -> tuple[dict, list[Headline]]:
     sent = select_headlines(heads, as_of)
     assert all(h.published <= as_of for h in sent)  # the date gate
-    lines = "\n".join(f"{i} | {h.published} | {h.source} | {h.title}" for i, h in enumerate(sent)) or "(none)"
+    lines = "\n".join(f"{i} | {h.published} | {h.source} [{tier(h.source)}] | {h.title}" for i, h in enumerate(sent)) or "(none)"
     d = ask(key, WHO_PROMPT.format(as_of=as_of, question=question.replace('"', "'"), lines=lines, maxdev=10), http=http)
     cands, seen = [], set()
     for c in (d.get("candidates") or [])[:6]:
@@ -296,8 +341,9 @@ def read_who(key: str, question: str, heads: list[Headline], as_of: date, http=_
             continue
         ids = [i for i in (x.get("headline_ids") or []) if isinstance(i, int) and 0 <= i < len(sent)]
         if ids:
+            strength = "weak" if support([sent[i].source for i in ids])[1] == "Low" else x["strength"]
             devs.append({"candidate": x["candidate"], "date": max(sent[i].published for i in ids),
-                         "summary": str(x.get("summary", "")).strip()[:200], "direction": x["direction"], "strength": x["strength"], "ids": ids})
+                         "summary": str(x.get("summary", "")).strip()[:200], "direction": x["direction"], "strength": strength, "ids": ids})
     return ({"decided": bool(d.get("decided")), "decided_note": str(d.get("decided_note", "")).strip()[:300],
              "candidates": cands, "developments": devs, "summary": str(d.get("summary", "")).strip()[:700]}, sent)
 
@@ -310,7 +356,7 @@ def build_who_case(question: str, reading: dict, sent: list[Headline]) -> Case:
         types[t] = {"family": f"{dv['direction']}:{dv['candidate']}", "lr": {dv["candidate"]: lr if dv["direction"] == "up" else 1 / lr}}
         hs = [sent[i] for i in dv["ids"]]
         ev.append(Evidence(f"d{n}", dv["date"], dv["date"], "focus", t, dv["summary"], hs[0].link,
-                           max(reliability(h.source) for h in hs), dv["candidate"]))
+                           support([h.source for h in hs])[0], dv["candidate"]))
     half = {**HALF_LIFE, **{t["family"]: 30 for t in types.values()}}
     spec = {"name": question, "focus_entity": "focus",
             "questions": [{"id": "q", "text": question, "kind": "live", "priors": {c["name"]: c["prior"] for c in reading["candidates"]}}]}

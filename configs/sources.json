@@ -1,0 +1,23 @@
+{
+  "_note": "Starting list of outlet credibility, set by an analyst and meant to be edited. Scores: how much a report from this outlet counts (1 = fully, 0 = ignored). Names are matched as whole words, longest name first; a name starting with = must match the outlet name exactly. Outlets not listed get the 'unknown' score. This rates typical reliability for factual news reporting, not politics, and any single story can still be wrong.",
+  "scores": {"high": 0.9, "medium": 0.75, "unknown": 0.55, "low": 0.35, "satire": 0.0},
+  "high": ["reuters", "associated press", "ap news", "=ap", "afp", "bbc", "bloomberg", "financial times", "wall street journal", "wsj",
+           "new york times", "washington post", "the guardian", "the economist", "npr", "pbs", "france 24", "deutsche welle", "=dw",
+           "al jazeera", "cnbc", "cbs news", "nbc news", "abc news", "cnn", "politico", "axios", "nikkei", "=the times", "le monde",
+           "el país", "el pais", "der spiegel", "=nature", "=science", "propublica", "c-span", "sec.gov", "federal reserve",
+           "white house", "european commission", "united nations"],
+  "medium": ["fortune", "forbes", "business insider", "the verge", "techcrunch", "wired", "ars technica", "marketwatch", "barron's",
+             "yahoo", "msn", "usa today", "los angeles times", "=time", "newsweek", "the hill", "fox news", "fox business", "sky news",
+             "the independent", "the telegraph", "south china morning post", "times of india", "the hindu", "hindustan times", "cbc",
+             "euronews", "semafor", "the information", "9to5mac", "macrumors", "engadget", "variety", "hollywood reporter", "espn",
+             "the atlantic", "the new yorker", "vox", "national review", "the times of israel", "haaretz", "japan times", "straits times",
+             "globe and mail", "sydney morning herald", "irish times", "investopedia", "cnet", "zdnet", "the register", "tom's hardware"],
+  "low": ["pr newswire", "globenewswire", "business wire", "accesswire", "einpresswire", "newsfile",
+          "daily mail", "mailonline", "the sun", "new york post", "daily express", "daily star", "the mirror", "daily mirror",
+          "national enquirer", "tmz", "radar online",
+          "=rt", "rt.com", "sputnik", "tass", "global times", "press tv", "xinhua",
+          "breitbart", "infowars", "gateway pundit", "epoch times", "natural news", "zero hedge", "zerohedge", "occupy democrats",
+          "palmer report", "raw story", "daily kos", "newsmax", "oann",
+          "seeking alpha", "motley fool", "medium.com", "substack", "reddit", "youtube", "quora", "tipranks", "stocktwits"],
+  "satire": ["the onion", "babylon bee", "daily mash", "newsthump", "waterford whispers", "borowitz", "the beaverton", "the shovel"]
+}

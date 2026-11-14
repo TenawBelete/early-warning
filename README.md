@@ -48,6 +48,10 @@ With a free Gemini key in the app's Secrets (see GUIDE.md), an AI model sets up 
 developments that matter (`ew/ai.py`). It never sets the final number; the engine does. The AI
 calls are tested against recorded sample replies only, not against the live service.
 
+Source credibility (`ew/sources.py`, `configs/sources.json`): every outlet is rated high, medium, low
+or unknown from an editable list; satire is dropped; claims confirmed by several good outlets count
+for more, and claims carried only by low or unknown outlets can never be more than weak signals.
+
 This mode is experimental. Keyword rules misread headlines, the starting value is a judgment,
 and nothing in it has been scored against outcomes. The live fetch could not be tested from the
 build environment (no access to news sites there); it is tested against recorded sample data.
