@@ -106,15 +106,26 @@ class Page(unittest.TestCase):
 
     def test_headline_is_rounded_framed_and_has_a_range(self):
         at, today = self.run_app([{"date": date.today(), "summary": "Board opens talks", "direction": "up", "strength": "strong", "ids": [0]}])
-        text = " ".join(m.value for m in at.markdown)
-        self.assertRegex(text, r"### (Very unlikely|Unlikely): about \d+% \(range ")
-        self.assertIn("model estimate from public news reporting, not a statement of fact", text)
-        self.assertNotRegex(text.split("###")[1][:60], r"\d\.\d%")   # no decimals in the headline
+        import re
+        text = re.sub(r"<[^>]+>", " ", " ".join(m.value for m in at.markdown))
+        text = re.sub(r"\s+", " ", text)
+        self.assertRegex(text, r"(Very unlikely|Unlikely) about \d+% Range (under 1|\d+)% to \d+%")
+        self.assertIn("A model estimate from public news reporting, not a statement of fact", text)
+        self.assertNotRegex(text, r"about \d+\.\d%")   # no decimals in the headline
 
     def test_range_includes_starting_value_uncertainty(self):
         at, _ = self.run_app([], prior=0.2)
         cap = next(c.value for c in at.caption if c.value.startswith("Range "))
-        self.assertEqual(cap, "Range 10% to 35%")   # 20% with odds halved and doubled, no news at all
+        self.assertEqual(cap, "Range 10% to 35%")
+        self.assertTrue(any('Range 10% to 35%</div>' in m.value for m in at.markdown))
+
+    def test_dynamic_text_is_escaped_in_html(self):
+        from ew import style
+        html = style.hero_yes_no("Unlikely", "10%", "5% to 20%", 0.1, 0.05, 0.2, '<script>alert(1)</script>', "1 January 2027")
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertNotIn("<img", style.note("x", '<img src=x onerror=1>'))
+        self.assertNotIn("<b>evil", style.hero_who([("<b>evil</b>", "40%", 0.4, 0.2, 0.6, False)]))   # 20% with odds halved and doubled, no news at all
 
     def test_no_failed_engine_setting_is_offered(self):
         at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()

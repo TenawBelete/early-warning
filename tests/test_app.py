@@ -164,7 +164,7 @@ class App(unittest.TestCase):
             next(b for b in at.button if b.label == "Analyse").click().run()
         self.assertFalse(at.exception)
         self.assertFalse(at.error)
-        self.assertTrue(any("Most likely: Ann Lee" in m.value for m in at.markdown))
+        self.assertTrue(any("Most likely: Ann Lee</div>" in m.value for m in at.markdown))
 
     def test_who_question_without_ai_explains(self):
         import streamlit as st

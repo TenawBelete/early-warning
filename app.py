@@ -19,8 +19,10 @@ from ew.evidence import visible_as_of
 from ew import ai, live
 from ew.sources import support, tier
 from ew.present import band, odds_shift, pack, show, unpack
+from ew import style
 
-st.set_page_config(page_title="Early-warning platform", layout="wide")
+st.set_page_config(page_title="Early Warning", layout="wide")
+st.markdown(style.CSS, unsafe_allow_html=True)
 
 WEAK = 0.3                          # if evidence shifts no answer by more than this (log-odds), flag it
 
@@ -46,9 +48,8 @@ def evidence_table(pairs) -> pd.DataFrame:
 LINK = {"Source": st.column_config.LinkColumn("Source", display_text="open")}
 
 # ---------------------------------------------------------------- sidebar
-st.sidebar.title("Early-warning platform")
-st.sidebar.caption("Prototype. Probabilities from dated public evidence, never certainties.")
-page = st.sidebar.radio("What do you want to do?", ["Ask anything (live news)", "Worked examples (Iran, Nvidia)", "Scorecard (track record)"])
+st.sidebar.markdown(style.BRAND, unsafe_allow_html=True)
+page = st.sidebar.radio("Workspace", ["Ask anything (live news)", "Worked examples (Iran, Nvidia)", "Scorecard (track record)"])
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -184,13 +185,11 @@ def render_who(r: dict):
     if reading["decided"]:
         st.error("The news suggests this has already been decided. " + reading["decided_note"])
     else:
-        st.markdown(f"### Most likely: {top}, about {show(probs[top])} (range {show(lo[top])} to {show(hi[top])})")
-        nxt = f" Next is {named[1]} at about {show(probs[named[1]])}." if len(named) > 1 else ""
-        st.markdown(f"**A model estimate from public news reporting, not a statement of fact.**{nxt} "
-                    f"The chance it is someone not on this list is about {show(probs[ai.OTHER])}. The range covers nearby engine "
-                    f"settings and a starting value half or twice as likely.")
+        st.markdown(style.hero_who([(h, show(probs[h]), probs[h], lo[h], hi[h], h == ai.OTHER) for h in order]), unsafe_allow_html=True)
+        st.caption(f"{top} ranges from {show(lo[top])} to {show(hi[top])}. The chance it is someone not on this list is about "
+                   f"{show(probs[ai.OTHER])}. Ranges cover nearby engine settings and a starting value half or twice as likely.")
     if reading["summary"]:
-        st.markdown(f"**What the news says.** {reading['summary']}")
+        st.markdown(style.note("What the news says.", reading["summary"]), unsafe_allow_html=True)
     pri = {c["name"]: c for c in reading["candidates"]}
     st.dataframe(pd.DataFrame([{"Candidate": h, "Estimate": "about " + show(probs[h]), "Range": f"{show(lo[h])} to {show(hi[h])}",
                                 "Starting value": show(pri[h]["prior"]), "Why this starting value": pri[h]["reason"]} for h in order]),
@@ -237,10 +236,11 @@ def render_who(r: dict):
 
 
 def ask_page():
-    st.title("Ask anything")
+    st.markdown('<div class="ew-eyebrow">Live analysis</div>', unsafe_allow_html=True)
+    st.title("Ask a question about the future")
     has_ai = bool(ai_key())
-    st.caption("Type a question about a person, company or country and press Analyse. The app works out the rest, "
-               "reads dated public news headlines, and estimates the chance. Experimental: see the Limits tab.")
+    st.caption("Name a person, company or country and an event. The platform reads dated public news headlines, weighs each "
+               "source, and estimates the chance with its reasons. Experimental: see the Limits tab.")
     question = st.text_input("Your question", placeholder="Will Jane Doe step down as CEO of Acme in the next 30 days?   or   Who will be the next CEO of Acme?")
     with st.expander("Advanced (optional: everything here is filled in automatically)"):
         c1, c2 = st.columns(2)
@@ -331,8 +331,8 @@ def ask_page():
         st.warning("You chose a past date. Later headlines are hidden, but the AI model may still remember what happened next, "
                    "so this replay is not a fair test.")
     if not stale:
-        st.markdown(f"### {band(p_yes)}: about {show(p_yes)} (range {show(lo_yes)} to {show(hi_yes)})")
-        st.markdown(f"**A model estimate from public news reporting, not a statement of fact,** that this happens by {deadline:%d %B %Y}: {ev_txt}.")
+        st.markdown(style.hero_yes_no(band(p_yes), show(p_yes), f"{show(lo_yes)} to {show(hi_yes)}", p_yes, lo_yes, hi_yes,
+                                      ev_txt, f"{deadline:%d %B %Y}"), unsafe_allow_html=True)
         if n_sig == 0:
             why = "Nothing in the recent news changes the picture, so this is the starting value."
         else:
@@ -360,10 +360,11 @@ def ask_page():
         if prior0 >= 0.2 and plan.get("by") == "ai":
             cautions.append("the result leans heavily on the starting value, which is the AI model's judgment")
         level = "Low" if len(cautions) >= 2 or not reading else "Moderate"
-        st.markdown(f"**How much to rely on this: {level}.** " + ("Reasons for caution: " + "; ".join(cautions) + "." if cautions
-                    else "Enough headlines, a near deadline and a stable number. Still a prototype with no track record."))
+        st.markdown(style.note(f"How much to rely on this: {level}.", "Reasons for caution: " + "; ".join(cautions) + "." if cautions
+                               else "Enough headlines, a near deadline and a stable number. Still a prototype with no track record."),
+                    unsafe_allow_html=True)
     if reading and reading["summary"]:
-        st.markdown(f"**What the news says.** {reading['summary']}")
+        st.markdown(style.note("What the news says.", reading["summary"]), unsafe_allow_html=True)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Chance the event happens", "n/a" if stale else "about " + show(p_yes))
     if not stale:
@@ -481,6 +482,7 @@ def ask_page():
 
 
 def scorecard_page():
+    st.markdown('<div class="ew-eyebrow">Track record</div>', unsafe_allow_html=True)
     st.title("Scorecard")
     st.caption("A forecast earns trust only by being scored. Save forecasts with 'Download this forecast' when you make them, "
                "then load the files here once the answers are known.")
@@ -558,6 +560,7 @@ leak = st.sidebar.checkbox("Reveal what hindsight would add", value=False,
 st.sidebar.caption(f"Settings: {settings.label()}")
 
 # ---------------------------------------------------------------- headline
+st.markdown('<div class="ew-eyebrow">Worked example</div>', unsafe_allow_html=True)
 st.title(case.spec["name"])
 st.subheader(q["text"])
 st.caption(f"Using only records public by the end of {as_of:%d %B %Y}. Focus of the investigation: "
